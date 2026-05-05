@@ -1,0 +1,57 @@
+{
+  "name": "Coach Alex — Arbitro",
+  "short_name": "Coach Alex",
+  "description": "Coach personale per il raduno e la trasformazione fisica",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#07080d",
+  "theme_color": "#07080d",
+  "scope": "./",
+  "lang": "it",
+  "categories": ["health", "fitness", "lifestyle"],
+  "icons": [
+    {
+      "src": "assets/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Check-in serale",
+      "short_name": "Check-in",
+      "description": "Log giornaliero rapido",
+      "url": "./?action=checkin",
+      "icons": [{ "src": "assets/icon-180.png", "sizes": "180x180" }]
+    },
+    {
+      "name": "Log peso",
+      "short_name": "Peso",
+      "description": "Registra peso veloce",
+      "url": "./?action=weight",
+      "icons": [{ "src": "assets/icon-180.png", "sizes": "180x180" }]
+    },
+    {
+      "name": "Foto piatto",
+      "short_name": "Foto",
+      "description": "Analizza pasto con AI",
+      "url": "./?action=foto",
+      "icons": [{ "src": "assets/icon-180.png", "sizes": "180x180" }]
+    }
+  ]
+}
