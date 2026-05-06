@@ -8,7 +8,7 @@
 
 ### ❌ Cosa NON è possibile (PWA)
 
-- **Auto-import da Apple Health:** le PWA non hanno HealthKit API
+- **HealthKit API diretta:** le PWA non possono leggere HealthKit nativamente
 - **Auto-import da iFit:** iFit non espone API pubbliche per terze parti
 - **Auto-import da MacroFactor:** MF non ha API pubbliche
 - **Auto-import da Strava:** richiederebbe OAuth + backend (rifiutato)
@@ -16,10 +16,74 @@
 ### ✅ Cosa È possibile
 
 1. **Inserimento manuale** in app (form veloce, 30 sec)
-2. **Import via Apple Shortcut** (workaround per Apple Health)
-3. **Inferenza da check-in serale** (campo "workout fatto")
-4. **Import da CSV export** (Apple Health → CSV → import)
-5. **Foto schermata + AI vision** che estrae i dati (sperimentale, costo API)
+2. **Bulk import 1-click via Apple Shortcut** (V1.5+ — vedi sezione sotto)
+3. **Sync incrementale 24h via Automation iOS giornaliera**
+4. **Inferenza da check-in serale** (campo "workout fatto")
+5. **Foto schermata + AI vision** (fallback, costo API ~€0.012/screenshot)
+
+---
+
+## Bulk import 1-click (V1.5)
+
+**Strategia:** Apple Shortcut iOS legge HealthKit (default 365gg), assembla un JSON, lo copia in clipboard. La PWA con `?action=bulk` apre la tab Setup, l'utente tappa "📋 Incolla" e "🚀 Analizza". Idempotente al re-import (dedup via natural key).
+
+### Setup iniziale (una volta, ~5 min)
+
+1. Setup tab → sezione "Apple Shortcuts pronti" → espandi "📦 Import storico Apple Salute"
+2. Bottone "📋 Copia template JSON per Shortcut" — incolla nel passo "Testo" dello Shortcut
+3. Costruisci lo Shortcut su iOS seguendo i passi nella ricetta
+4. "Trova campioni di salute" × N tipi: Massa corporea, Frequenza cardiaca, Frequenza cardiaca a riposo, HRV SDNN, VO2 Max, Calorie attive, Passi, Distanza, Sonno, e "Trova allenamenti"
+5. Tutti con Periodo = ultimi 365 giorni
+6. Sostituisci nel template `[LISTA_PESO]` con la variabile dei "Trova campioni — Massa corporea", etc.
+7. Aggiungi "Copia negli appunti" → input = il Testo
+8. Aggiungi "Apri URL" → `https://APP/?action=bulk`
+9. Salva come "Import storico Coach Alex"
+
+### Uso quotidiano
+
+- Per **bulk** (ricarica completa): apri lo Shortcut → la PWA si apre → tap "📋 Incolla" → "🚀 Analizza" → 365gg importati in ~10s
+- Per **sync 24h** (automation): duplica lo Shortcut, cambia Periodo a "ultime 24 ore", salva come "Sync giornaliero" e crea Automazione iOS "Ogni giorno 22:00 → esegui"
+
+### Schema JSON atteso
+
+```json
+{
+  "version": 1,
+  "exportedAt": "2026-05-06T20:00:00Z",
+  "weights":     [{"date": "2026-05-01", "value": 78.7}, ...],
+  "hr":          [{"date": "2026-05-01", "value": 75}, ...],
+  "resting_hr":  [{"date": "2026-05-01", "value": 86}, ...],
+  "hrv":         [{"date": "2026-05-01", "value": 42}, ...],
+  "vo2max":      [{"date": "2026-05-01", "value": 41.2}],
+  "active_kcal": [{"date": "2026-05-01", "value": 450}, ...],
+  "steps":       [{"date": "2026-05-01", "value": 8200}, ...],
+  "distance":    [{"date": "2026-05-01", "value": 6.3}, ...],
+  "sleep":       [{"date": "2026-05-01", "value": 7.5}, ...],
+  "workouts":    [
+    { "date": "2026-05-03T18:30:00Z", "type": "hiit_tapis",
+      "duration_min": 25, "kcal_active": 280, "hr_avg": 152, "hr_max": 178,
+      "distance_km": 3.2 }
+  ]
+}
+```
+
+In alternativa, lo Shortcut può direttamente produrre lo schema "diretto":
+```json
+{ "version": 1, "days": [{ "date": "2026-05-01", "weight_kg": 78.7, ... }] }
+```
+`Health.parseBulkJSON` accetta entrambi.
+
+### Dedup (re-import sicuro)
+
+- **weights**: chiave naturale = `date` (YYYY-MM-DD). Re-import sovrascrive senza duplicare.
+- **workouts**: `id = "apple_<YYYYMMDD>_<type>_<duration_min>_<HHMM>"`. Stesso workout = stessa chiave.
+- **checkins**: dati Apple aggregati daily usano `date = "<YYYY-MM-DD>T00:00:00.000Z"`. Merge con check-in manuale del giorno preserva campi manuali (energy, sleep slot, foodLevel, food, notes).
+
+### Limitazioni note
+
+- Su iOS PWA, `navigator.clipboard.readText()` richiede gesture utente: l'auto-paste su `?action=bulk` può fallire silenziosamente. Fallback: tap manuale su "📋 Incolla".
+- Workouts "Allenamento aperto" senza tipo specifico → mappati a `altro` (può richiedere classificazione manuale post-import).
+- HRV richiede Apple Watch (Misurazione HRV automatica notturna). Senza Watch, campo nullo.
 
 ---
 

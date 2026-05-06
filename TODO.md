@@ -1,6 +1,6 @@
 # TODO.md — Roadmap per Claude Code
 
-> Lista delle cose ancora da fare. Aggiornata 5 mag 2026 dopo V1.1.
+> Lista delle cose ancora da fare. Aggiornata 6 mag 2026 dopo V1.5.
 
 ---
 
@@ -72,6 +72,25 @@ Tutti i task in media priorità sono stati completati il 6 maggio 2026. Vedi sez
 ---
 
 ## ✅ COMPLETATI
+
+### 6 maggio 2026 (V1.5) — branch `claude/apple-import-fitness-logic-tWfiI`
+- ✅ **Modulo `src/science.js`** pure functions (BMR, TDEE Katch-McArdle/Mifflin, activity multiplier dinamico, currentPhase, calcMacros adattive, hydration, HRV/RHR detection, sRPE, weightTrendAdvice, taperVolumeMultiplier, alternativesForPain). Riferimenti: Mifflin 1990, Burke 2011, Trexler 2014, Foster 2001, Plews & Buchheit 2017
+- ✅ **Profile esteso**: height, sex, BF%, mesoAnchor, kcalOffset, macroDisplayMode in Setup tab + onboarding back-compat in `Storage.getProfile`
+- ✅ **API key validata**: `API.testConnection` chiamato prima del salvataggio, niente storage di key non funzionanti
+- ✅ **Macro dinamici**: TDEE Katch-McArdle se BF noto, multiplier da kcal_active reali ultimi 14gg, deficit per fase (cut 0.78 / refeed 1.0 / loading 0.95 / test 1.0 / recovery 1.05), proteine 1.8-2.4 g/kg per fase, carbs 7g/kg in glycogen-loading
+- ✅ **Toggle macro grammi/semaforo** persistito in localStorage. Frasi qualitative per fase nel modo semaforo
+- ✅ **Idratazione dinamica**: 35 ml/kg + 17 ml/min cardio pianificato
+- ✅ **Banner kcal-trend**: regressione lineare 14gg, +100 / -150 con Apply, disattivato in taper window
+- ✅ **Semaforo arricchito** con HRV drop, RHR rise, sRPE >2000 AU, stato "grigio in attesa" se manca check-in fresh
+- ✅ **Taper graduato** T-5..T0: durata × {0.9, 0.7, 0.5, 0.2, 0, 0} con modifier visibile
+- ✅ **Mesociclo 3+1 deload** con anchor manuale in Setup (default 2026-04-06)
+- ✅ **Pain alternatives** (tibia/ginocchio/schiena/caviglia) → tap apre form pre-compilato
+- ✅ **Bulk import Apple Salute 1-click** via Apple Shortcut + paste-JSON + dedup natural keys (idempotente)
+- ✅ **Sync incrementale 24h** Shortcut variant per Automation iOS giornaliera
+- ✅ **Coach AI con context fase**: system prompt esteso con phase + macros + mesoWeek
+- ✅ **UX wins**: offline indicator nello statusbar, draft check-in autosave in localStorage, Coach AI loading state + spinner + timeout 30s, tab bar overflow iPhone SE fix (≤374px nasconde label), recap settimanale automatico domenica >=18:00
+- ✅ **Export CSV** (weights+workouts+checkins) accanto al JSON in Setup → Backup
+- ✅ **SW bump v3 → v4** con precache di `src/science.js`
 
 ### 6 maggio 2026 (V1.4)
 - ✅ Database alimenti italiani Coop in tab Dieta: 60 cibi con macros, ricerca + filtro per categoria, tap aggiunge a check-in food (file `src/foods.js`)

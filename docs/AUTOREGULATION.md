@@ -211,10 +211,10 @@ L'app deve:
 4. **Chiedere conferma** prima di procedere se rosso/giallo
 5. **Loggare modifiche** per analisi pattern (es. "stinchi sensibili dopo HIIT")
 
-### Pseudocodice
+### Pseudocodice (v1.5)
 
 ```
-function calcoloSemaforo(checkinIeri, weights, baseline) {
+function calcoloSemaforo(checkinIeri, weights, baseline, signals) {
   let punti = 0;
 
   if (checkinIeri.sleep === '<6') punti += 3;
@@ -227,8 +227,48 @@ function calcoloSemaforo(checkinIeri, weights, baseline) {
   if (checkinIeri.foodReduced) punti += 2;
   if (checkinIeri.illness) punti += 5;
 
+  // V1.5: signals scientifici (Plews & Buchheit 2017, Foster 2001)
+  if (signals.hrvDrop) punti += 3;       // HRV calo >7% baseline 7gg
+  if (signals.rhrRise) punti += 2;       // RHR +5 bpm baseline 7gg
+  if (signals.sessionLoad > 2000) punti += 2; // sRPE 7gg in AU
+
   if (punti >= 4) return 'rosso';
   if (punti >= 2) return 'giallo';
+  if (!checkinIeri || !signals.checkinFresh) return 'grigio'; // in attesa
   return 'verde';
 }
 ```
+
+---
+
+## 📊 Signals scientifici (V1.5)
+
+L'app calcola signals oggettivi dagli ultimi dati Apple Health/Watch e li
+combina con il check-in soggettivo. Vedi `docs/CONTEXT_SCIENCE.md` per i
+riferimenti peer-reviewed.
+
+### HRV (SDNN) — `Science.detectHRVDrop`
+- Calo >7% vs rolling baseline 7gg → +3 punti semaforo, motivo "HRV calo X%"
+- Soglia conservativa (Plews & Buchheit 2017 usano 7%).
+- Dato proviene da Apple Watch (notturno automatico) via bulk import.
+
+### RHR — `Science.detectRHRRise`
+- Rise ≥5 bpm vs baseline 7gg → +2 punti semaforo
+- Indica recupero incompleto o inizio illness.
+
+### Session RPE — `Science.calcSessionLoad`
+- AU = Σ (RPE × duration_min) ultimi 7gg.
+- >2000 AU → banner "considera Z2 leggero al posto di intensità".
+- Soglia conservativa per Alex; aggiustabile in futuro su base dati.
+
+### Taper graduato — `Science.taperVolumeMultiplier`
+- T-5..T0 dal test: durata workout × {0.9, 0.7, 0.5, 0.2, 0, 0}.
+- Non sovrascrive il piano, modifica la durata e mostra modifier.
+
+### Pain alternatives — `Science.alternativesForPain`
+- Mapping zona dolore → alternative no-impact:
+  - `tibia`: bici Z2, vogatore, nuoto, pesi upper
+  - `ginocchio`: nuoto, pesi upper, mobilità
+  - `schiena`: mobilità, nuoto dorso, cammino
+  - `caviglia`: bici, pesi upper, nuoto
+- Tap su alternativa → apre form workout pre-compilato (`prefillAltWorkout`).
