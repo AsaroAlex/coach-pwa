@@ -45,7 +45,28 @@ const API = {
       .map(w => `${new Date(w.date).toLocaleDateString('it-IT')}: ${w.type} ${w.duration_min}min RPE${w.rpe || '?'}${w.pain?.length ? ' DOLORE:' + w.pain.join(',') : ''}`)
       .join('; ');
 
-    return `Sei il coach personale di Alex, Assistente Arbitrale calcio Eccellenza Emilia-Romagna.
+    // Context fase + macros se Science è caricato (browser only)
+    let phaseBlock = '';
+    try {
+      if (typeof Science !== 'undefined' && typeof TEST_DATES !== 'undefined') {
+        const { phase, daysToTest } = Science.currentPhase(new Date(), TEST_DATES, []);
+        const lbm = Science.calcLBM(w, profile.bf);
+        const tdeeRes = Science.calcTDEE(profile, recentWorkouts || []);
+        const targetKcal = Science.calcTargetKcal(tdeeRes.tdee, phase, profile.kcalOffset || 0);
+        const macros = Science.calcMacros(targetKcal, w, lbm, phase);
+        const meso = Science.currentMesocycleWeek(new Date(), profile.mesoAnchor || '2026-04-06');
+        phaseBlock = `
+
+CONTESTO DINAMICO OGGI:
+- Fase: ${phase}${daysToTest !== null ? ' (T' + (daysToTest >= 0 ? '+' + daysToTest : daysToTest) + ' dal test1)' : ''}
+- TDEE: ${tdeeRes.tdee} kcal · target ${targetKcal} kcal
+- Macro: ${macros.prot_g}P / ${macros.carb_g}C / ${macros.fat_g}F${macros.breakfast_carbs_g ? ' · colazione test ' + macros.breakfast_carbs_g + 'g carbs' : ''}
+- Settimana mesociclo: ${meso}/4${meso === 4 ? ' (DELOAD: volume × 0.6)' : ''}
+- Quando dai consigli alimentari/allenamento, COERENZA con la fase corrente.`;
+      }
+    } catch(_) {}
+
+    return `Sei il coach personale di Alex, Assistente Arbitrale calcio Eccellenza Emilia-Romagna.${phaseBlock}
 
 DATI REALI ALEX:
 - Peso: ${w}kg, BF 26.8%, BMI 27.9

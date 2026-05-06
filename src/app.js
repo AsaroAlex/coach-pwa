@@ -660,18 +660,190 @@ async function renderOggi() {
   }
 }
 
-async function renderMacros(weight) {
-  const w = weight || 78.7;
-  const tdee = Math.round((10 * w + 6.25 * 175 - 5 * 25 + 5) * 1.55);
-  const target = Math.round(tdee * 0.75);
-  const prot = Math.round(w * 2.3);
-  const fat = Math.round(w * 0.85);
-  const carb = Math.round((target - prot * 4 - fat * 9) / 4);
+// PHASE LABELS (UI) ─────────────────────────────────────
+const PHASE_LABELS = {
+  'cut':                { label: 'CUT', emoji: '✂️', color: 'tg', desc: 'Deficit per perdita peso' },
+  'maintenance-refeed': { label: 'REFEED', emoji: '🍝', color: 'ty', desc: 'Mantenimento (sabato): ricarica leptina' },
+  'pre-test-loading':   { label: 'PRE-TEST', emoji: '🎯', color: 'tu', desc: 'Avvicinamento test: deficit ridotto' },
+  'glycogen-loading':   { label: 'LOADING', emoji: '🔥', color: 'tu', desc: 'Carbo-loading: glicogeno per il test' },
+  'test-day':           { label: 'TEST DAY', emoji: '🏆', color: 'tg', desc: 'Giorno test: colazione carbs, pranzo normale' },
+  'recovery':           { label: 'RECOVERY', emoji: '🛌', color: 'ty', desc: 'Recupero post-test: surplus leggero' },
+};
 
-  document.getElementById('prot-target').textContent = `~${prot}g`;
-  document.getElementById('prot-sub').textContent = `2.3 g/kg = ${prot}g · in 3 pasti da ${Math.round(prot/3)}g`;
-  document.getElementById('carb-target').textContent = `~${Math.max(carb, 150)}g`;
-  document.getElementById('fat-target').textContent = `~${fat}g`;
+// TRAFFIC LIGHT FRASI per fase (modalità semaforo)
+function trafficPhrasesForPhase(phase, w, lbm) {
+  switch (phase) {
+    case 'cut':
+      return [
+        '🟢 Verde: petto pollo, uova, verdure verdi, riso integrale moderato',
+        '🟡 Giallo: pasta integrale 80g, frutta 2x, latticini magri',
+        '🔴 Rosso: dolci, fritti, alcol, carbs sopra ~250g',
+      ];
+    case 'maintenance-refeed':
+      return [
+        '🟢 Pasta o riso 100-120g x 2 pasti, frutta 3x, dessert 1x ok',
+        '🟡 Pizza 1 trancio, vino 1 bicchiere',
+        '🔴 Solo se sai che domani torni in deficit',
+      ];
+    case 'pre-test-loading':
+      return [
+        '🟢 Carbs presenti in ogni pasto: pasta/riso/patate 100g',
+        '🟡 Frutta zuccherina 2-3x, gelato piccolo ok',
+        '🔴 Niente alcol, niente fritti pesanti',
+      ];
+    case 'glycogen-loading':
+      return [
+        `🔥 Carbs target ~7 g/kg = ${Math.round(w * 7)}g totali`,
+        '🟢 Pasta in bianco 150g x 2, riso 120g, banana 3x, miele',
+        '🟡 Pane bianco, gelato sorbetto, succo frutta',
+        '🔴 NIENTE alcol, fritti, fibre eccessive (legumi/verdure crude)',
+      ];
+    case 'test-day': {
+      const breakfast = lbm ? Math.round(lbm * 1.5) : Math.round(w * 1.1);
+      return [
+        `🥣 Colazione H-2: ${breakfast}g avena + banana + caffè + miele`,
+        '🍌 H-30: banana matura',
+        '💧 H-1: 250ml acqua + sale',
+        '🍝 Post-test: pasta 100g + petto pollo 150g entro 30min',
+      ];
+    }
+    case 'recovery':
+      return [
+        '🟢 Carbs 4-5 g/kg, proteine 2 g/kg, grassi normali',
+        '🟢 Recupero 48h: dormi 8h+, idratati',
+        '🟡 Movimento leggero ok, no carico intenso',
+      ];
+    default:
+      return [];
+  }
+}
+
+async function renderMacros(weight) {
+  const profile = appState.profile;
+  const w = weight || profile.weight || 78.7;
+  const lbm = Science.calcLBM(w, profile.bf);
+
+  // TDEE dinamico con kcal_active reali ultimi 14gg
+  const allWorkouts = await Storage.getWorkouts();
+  const cutoff = Date.now() - 14 * 86400000;
+  const w14 = allWorkouts.filter(x => new Date(x.date).getTime() > cutoff);
+  const { tdee, bmr, multiplier } = Science.calcTDEE(profile, w14);
+
+  // Phase detection
+  const events = await Storage.getEvents();
+  const { phase, daysToTest } = Science.currentPhase(new Date(), TEST_DATES, events);
+  const targetKcal = Science.calcTargetKcal(tdee, phase, profile.kcalOffset || 0);
+  const macros = Science.calcMacros(targetKcal, w, lbm, phase);
+  const cardioMin = estimatePlannedCardioMinutes();
+  const hydration = Science.calcHydration(w, cardioMin);
+
+  const meta = PHASE_LABELS[phase] || PHASE_LABELS['cut'];
+  const tagEl = document.getElementById('macro-phase-tag');
+  if (tagEl) {
+    tagEl.textContent = meta.label + (daysToTest !== null && Math.abs(daysToTest) <= 7 ? ` · T${daysToTest >= 0 ? '+' + daysToTest : daysToTest}` : '');
+    tagEl.className = 'tag ' + meta.color;
+  }
+
+  const mode = profile.macroDisplayMode || 'toggle';
+  // Sotto-modalità del toggle: ricordata in localStorage
+  const subMode = localStorage.getItem('macroSubMode') || 'grams'; // 'grams' | 'traffic'
+
+  const el = document.getElementById('macro-content');
+  if (!el) return;
+
+  const headerLine = `<div class="tip blue" style="margin-bottom:10px"><strong>${meta.emoji} ${meta.label}</strong> · ${meta.desc}<br><span style="font-size:11px;color:var(--mu)">TDEE ${tdee} (BMR ${bmr} × ${multiplier}) · target ${targetKcal} kcal${profile.kcalOffset ? ' (offset ' + (profile.kcalOffset > 0 ? '+' : '') + profile.kcalOffset + ')' : ''}</span></div>`;
+
+  let toggleBtn = '';
+  if (mode === 'toggle') {
+    const otherLabel = subMode === 'grams' ? '🚦 Modalità semaforo' : '⚖️ Modalità grammi';
+    toggleBtn = `<div style="text-align:right;margin-bottom:6px"><button class="btn-s" onclick="toggleMacroSubMode()" style="font-size:10px;padding:4px 9px">${otherLabel}</button></div>`;
+  }
+
+  const showGrams = (mode === 'grams') || (mode === 'toggle' && subMode === 'grams');
+  const showTraffic = (mode === 'traffic') || (mode === 'toggle' && subMode === 'traffic');
+
+  let body = '';
+
+  if (showGrams) {
+    const protPerKg = (Science.PROTEIN_PER_KG[phase] || 2.0).toFixed(1);
+    const carbPerKg = (macros.carb_g / w).toFixed(1);
+    const fatPerKg = (macros.fat_g / w).toFixed(1);
+    body += `
+      <div class="row"><div class="ri">🥩</div><div class="rc"><div class="rt">Proteine</div><div class="rs">${protPerKg} g/kg · in 3 pasti da ~${Math.round(macros.prot_g/3)}g</div></div><div class="rv" style="color:var(--blue)">${macros.prot_g}g</div></div>
+      <div class="row"><div class="ri">🍝</div><div class="rc"><div class="rt">Carboidrati</div><div class="rs">${carbPerKg} g/kg · ${phase === 'glycogen-loading' ? 'distribuiti su 4-5 pasti' : 'concentrali pre/post workout'}</div></div><div class="rv" style="color:var(--yellow)">${macros.carb_g}g</div></div>
+      <div class="row"><div class="ri">🥑</div><div class="rc"><div class="rt">Grassi</div><div class="rs">${fatPerKg} g/kg · min 0.7 g/kg per ormoni</div></div><div class="rv" style="color:var(--purple)">${macros.fat_g}g</div></div>
+      <div class="row"><div class="ri">💧</div><div class="rc"><div class="rt">Idratazione</div><div class="rs">${Math.round(hydration.base_ml/1000*10)/10}L base${cardioMin ? ' + ' + Math.round(hydration.cardio_ml) + 'ml cardio (' + cardioMin + 'min)' : ''}</div></div><div class="rv" style="color:var(--green)">${(hydration.total_ml/1000).toFixed(1)}L</div></div>
+    `;
+    if (phase === 'test-day' && macros.breakfast_carbs_g) {
+      body += `<div class="tip orange" style="margin-top:8px"><strong>🥣 Colazione test:</strong> ${macros.breakfast_carbs_g}g carbs (1.5 g/kg LBM) — es. 80g avena + 1 banana + 1 cucchiaio miele</div>`;
+    }
+  }
+
+  if (showTraffic) {
+    const phrases = trafficPhrasesForPhase(phase, w, lbm);
+    body += phrases.map(p => `<div class="row"><div class="ri">${p.slice(0, 2)}</div><div class="rc"><div class="rt">${p.slice(2).trim()}</div></div></div>`).join('');
+    body += `<div class="tip blue" style="margin-top:8px;font-size:11px">Target kcal: <strong>${targetKcal}</strong> · Idratazione: <strong>${(hydration.total_ml/1000).toFixed(1)}L</strong></div>`;
+  }
+
+  el.innerHTML = toggleBtn + headerLine + body;
+
+  // Banner suggerimento weight-trend (disattivato durante taper T-7..T+2)
+  await renderWeightTrendHint(phase, daysToTest);
+}
+
+// Stima minuti cardio del workout pianificato oggi (per idratazione).
+function estimatePlannedCardioMinutes() {
+  const dow = new Date().getDay();
+  const plan = WEEKLY_PLAN[dow];
+  if (!plan) return 0;
+  const tag = (plan.tag || '').toUpperCase();
+  if (tag.includes('Z2')) return tag.includes('45') || plan.short?.includes('45') ? 45 : 35;
+  if (tag.includes('HIIT')) return 25;
+  if (tag.includes('PARTITA')) return 90;
+  return 0;
+}
+
+function toggleMacroSubMode() {
+  const cur = localStorage.getItem('macroSubMode') || 'grams';
+  const next = cur === 'grams' ? 'traffic' : 'grams';
+  localStorage.setItem('macroSubMode', next);
+  renderMacros();
+}
+
+// Banner suggerimento kcal basato su weight trend ultimi 14gg.
+async function renderWeightTrendHint(phase, daysToTest) {
+  const el = document.getElementById('macro-content');
+  if (!el) return;
+  // Disattivato durante taper / loading / test / recovery
+  const inTaperWindow = daysToTest !== null && daysToTest <= 7 && daysToTest >= -2;
+  if (inTaperWindow) return;
+  const weights = await Storage.getWeights();
+  const advice = Science.weightTrendAdvice(weights, 14, 0.5);
+  if (!advice || advice.action === 'hold') return;
+  const profile = appState.profile;
+  const cur = profile.kcalOffset || 0;
+  const delta = advice.action === '+100' ? 100 : -150;
+  const newOffset = cur + delta;
+
+  const banner = document.createElement('div');
+  banner.className = 'tip yellow';
+  banner.style.marginTop = '8px';
+  banner.innerHTML = `<strong>📈 Suggerimento kcal:</strong> ${advice.action === '+100' ? '+100' : '-150'} (${advice.reason}).
+    <button class="btn-s" onclick="applyKcalOffset(${newOffset})" style="margin-left:8px;font-size:10px;padding:3px 8px">Applica</button>
+    <button class="btn-s" onclick="dismissKcalHint()" style="margin-left:4px;font-size:10px;padding:3px 8px;opacity:0.7">Ignora</button>`;
+  el.appendChild(banner);
+}
+
+async function applyKcalOffset(newOffset) {
+  appState.profile.kcalOffset = newOffset;
+  await Storage.saveProfile(appState.profile);
+  showToast(`Offset kcal aggiornato a ${newOffset >= 0 ? '+' : ''}${newOffset}`, 'success');
+  await renderMacros();
+}
+
+function dismissKcalHint() {
+  // Visivo soltanto: il banner verrà rigenerato al prossimo render se trend persiste.
+  showToast('Suggerimento ignorato per oggi', 'success');
 }
 
 // ── RADUNO ──────────────────────────────────────────────
@@ -2018,6 +2190,9 @@ window.saveAPI = saveAPI;
 window.testAPI = testAPI;
 window.saveCaps = saveCaps;
 window.saveProfileFields = saveProfileFields;
+window.toggleMacroSubMode = toggleMacroSubMode;
+window.applyKcalOffset = applyKcalOffset;
+window.dismissKcalHint = dismissKcalHint;
 window.toggleNotifications = toggleNotifications;
 window.toggleTheme = toggleTheme;
 window.toggleProgressPhoto = toggleProgressPhoto;
