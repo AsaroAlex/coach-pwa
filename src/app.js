@@ -51,6 +51,13 @@ async function handleURLActions() {
   if (action === 'checkin') navigateTo('checkin');
   else if (action === 'weight') quickLogWeight();
   else if (action === 'foto') navigateTo('dieta');
+  else if (action === 'workout') {
+    navigateTo('workouts');
+    setTimeout(() => prefillWorkoutFromURL(params), 300);
+  }
+  else if (action === 'export') {
+    setTimeout(() => exportData(), 500);
+  }
 }
 
 async function completeOnboarding() {
@@ -79,6 +86,7 @@ function navigateTo(tab) {
     foto: 'pg-foto',
     prog: 'pg-prog',
     settings: 'pg-settings',
+    workouts: 'pg-workouts',
   };
 
   const pageId = tabMap[tab];
@@ -102,6 +110,7 @@ function navigateTo(tab) {
     if (tab === 'settings') renderSettings();
     if (tab === 'foto') renderProgressPhotos();
     if (tab === 'coach') renderCoachHistory();
+    if (tab === 'workouts') renderWorkouts();
   }
 }
 
@@ -148,8 +157,42 @@ async function renderOggi() {
   const dow = now.getDay();
   const checkins = await Storage.getCheckins();
   const todayCheckin = checkins.find(c => isSameDay(new Date(c.date), now));
+  const yesterdayCheckin = checkins.find(c => {
+    const d = new Date(c.date);
+    return Math.abs((now - d) / 86400000 - 1) < 0.5;
+  });
+  const recentWorkouts = await Storage.getRecentWorkouts(5);
+  const yesterdayWorkout = recentWorkouts.find(w => {
+    const d = new Date(w.date);
+    return Math.abs((now - d) / 86400000 - 1) < 0.7;
+  });
+  const upcomingEvents = await Storage.getUpcomingEvents();
   const test1 = new Date('2026-05-09T09:00:00');
   const test1Days = Math.ceil((test1 - now) / (24 * 3600 * 1000));
+
+  // ── SEMAFORO autoregolazione ──
+  let semaforoPunti = 0;
+  let semaforoReasons = [];
+
+  if (yesterdayCheckin) {
+    if (yesterdayCheckin.sleep === '<6') { semaforoPunti += 3; semaforoReasons.push('sonno <6h'); }
+    else if (yesterdayCheckin.sleep === '6-7') { semaforoPunti += 1; }
+    if (yesterdayCheckin.energy <= 2) { semaforoPunti += 3; semaforoReasons.push('energia bassa'); }
+    else if (yesterdayCheckin.energy === 3) { semaforoPunti += 1; }
+  }
+
+  if (yesterdayWorkout?.pain?.length > 0) {
+    semaforoPunti += 4;
+    semaforoReasons.push('dolore ' + yesterdayWorkout.pain.join(','));
+  }
+  if (yesterdayWorkout?.intensity === 'max' || yesterdayWorkout?.rpe >= 8) {
+    semaforoPunti += 2;
+    semaforoReasons.push('ieri intensità alta');
+  }
+
+  let semaforo = 'verde';
+  if (semaforoPunti >= 4) semaforo = 'rosso';
+  else if (semaforoPunti >= 2) semaforo = 'giallo';
 
   // Coach message
   let msg = '';
@@ -162,42 +205,106 @@ async function renderOggi() {
   }
   document.getElementById('coach-msg').innerHTML = msg;
 
-  // Today plan based on day-of-week + match schedule
+  // Schema settimanale aggiornato V1.1
   const planMap = {
-    0: { icon: '⚽', title: 'Domenica · Partita o Riposo', tag: 'PARTITA', color: 'var(--yellow)',
-         desc: 'Con partita: è il tuo cardio di Z4-5. Senza: riposo o camminata leggera 30 min.',
-         actions: ['Idratati ora', 'Attiva pre-partita 5 min se gioca'] },
+    0: { icon: '⚽', title: 'Domenica · Partita o Z2 lungo', tag: 'PARTITA/Z2', color: 'var(--yellow)',
+         desc: 'Con partita: vale come 2 HIIT. Senza partita: Z2 lungo 45-60 min al tapis.',
+         actions: ['Idratati 250ml 30min prima', 'Pre-partita: 5 min mobilità leggera'] },
     1: { icon: '🏋️', title: 'Lunedì · Pesi (MacroFactor)', tag: 'PESI', color: 'var(--blue)',
          desc: 'Sessione MacroFactor Workout. Lascia che MF gestisca progressione.',
-         actions: ['Apri MacroFactor', 'Pranzo dopo allenamento'] },
-    2: { icon: '🔥', title: 'Martedì · HIIT Tapis', tag: 'HIIT', color: 'var(--acc)',
-         desc: 'Protocollo HIIT 22 min. BPM target sprint: 190+.',
-         actions: ['Caffeina 30 min prima', 'Seguire protocollo nel tab Zone'] },
-    3: { icon: '🌳', title: 'Mercoledì · Zona 2', tag: 'Z2', color: 'var(--green)',
-         desc: '45-55 min a 155-167 bpm. Fuori a Poggio Renatico (pianura) o tapis.',
-         actions: ['Controlla BPM ogni 5 min', 'Idratati prima'] },
+         actions: ['Apri MacroFactor', 'Pranzo entro 30 min dopo'] },
+    2: { icon: '🌳', title: 'Martedì · Z2 cardio 35 min', tag: 'Z2', color: 'var(--green)',
+         desc: 'Recovery attivo da pesi. 8.5-9.5 km/h pendenza 1-2%, BPM 155-167.',
+         actions: ['Riscaldamento 5 min progressivo', 'Cool-down 5 min'] },
+    3: { icon: '🔥', title: 'Mercoledì · HIIT tapis 25 min', tag: 'HIIT', color: 'var(--acc)',
+         desc: 'Schema "Piramide 1×1": 11→14 km/h, intervalli 1 min con recupero 1 min.',
+         actions: ['NO se ieri pesi pesante', 'Vedi protocollo nel tab Cardio'] },
     4: { icon: '🏋️', title: 'Giovedì · Pesi (MacroFactor)', tag: 'PESI', color: 'var(--blue)',
          desc: 'Seconda sessione MF della settimana.',
          actions: ['Apri MacroFactor'] },
-    5: { icon: '🌳', title: 'Venerdì · Zona 2 lunga', tag: 'Z2', color: 'var(--green)',
-         desc: '50-60 min Z2. La sessione più lunga della settimana.',
-         actions: ['Idratati', 'Cool-down camminata 5 min'] },
-    6: { icon: '😴', title: 'Sabato · Riposo', tag: 'RIPOSO', color: 'var(--mu)',
-         desc: 'Riposo completo. Se hai partita domani: niente. Camminata leggera ok.',
+    5: { icon: '🌳', title: 'Venerdì · Z2 lungo 45 min', tag: 'Z2', color: 'var(--green)',
+         desc: 'Sessione più lunga della settimana. 8.5-9 km/h, BPM 155-167.',
+         actions: ['Idratati', 'Cool-down progressivo 5 min'] },
+    6: { icon: '😴', title: 'Sabato · Riposo o Z2 leggero', tag: 'RIPOSO', color: 'var(--mu)',
+         desc: 'Pre-partita domani: riposo. Senza partita: Z2 30 min ok.',
          actions: ['Recupero attivo'] },
   };
 
-  const plan = planMap[dow];
+  let plan = planMap[dow];
+
+  // Override plan se semaforo rosso
+  if (semaforo === 'rosso') {
+    plan = {
+      icon: '🚨',
+      title: 'OGGI · RECOVERY (semaforo rosso)',
+      tag: 'RECOVERY',
+      color: 'var(--red)',
+      desc: 'Sistema in segnalazione rossa. Salta workout intenso. Cammino leggero 20-30 min OK.',
+      actions: ['NO HIIT', 'NO velocità >9 km/h', 'Idratazione + pasto regolare', 'Dormi presto stasera'],
+    };
+  } else if (semaforo === 'giallo' && (plan.tag === 'HIIT' || plan.tag === 'PESI')) {
+    plan = {
+      ...plan,
+      desc: '🟡 Semaforo giallo. ' + plan.desc + ' Riduci intensità −20% (volume o velocità).',
+    };
+  }
+
   document.getElementById('today-icon').textContent = plan.icon;
   document.getElementById('today-title').textContent = plan.title;
   document.getElementById('today-tag').textContent = plan.tag;
   document.getElementById('today-tag').style.color = plan.color;
 
-  let content = `<div class="tip orange">${plan.desc}</div>`;
+  let content = '';
+
+  // Semaforo banner
+  const semColors = {
+    verde: { bg: 'rgba(0,255,136,.1)', col: 'var(--green)', em: '🟢', txt: 'OK' },
+    giallo: { bg: 'rgba(255,200,0,.12)', col: 'var(--yellow)', em: '🟡', txt: 'Cautela' },
+    rosso: { bg: 'rgba(255,59,92,.12)', col: 'var(--red)', em: '🔴', txt: 'Recovery' }
+  };
+  const sc = semColors[semaforo];
+  content += `<div style="background:${sc.bg};border:1px solid ${sc.col};border-radius:11px;padding:10px 12px;margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:18px">${sc.em}</span>
+      <div style="flex:1">
+        <strong style="color:${sc.col};font-size:13px">Semaforo: ${sc.txt}</strong>
+        <div style="font-size:11px;color:var(--mu);margin-top:1px">${semaforoReasons.length ? semaforoReasons.join(' · ') : 'tutto in ordine'}</div>
+      </div>
+    </div>
+  </div>`;
+
+  content += `<div class="tip orange">${plan.desc}</div>`;
+
+  // Workout di ieri
+  if (yesterdayWorkout) {
+    const t = (typeof WORKOUT_TYPES !== 'undefined') ? WORKOUT_TYPES.find(t => t.id === yesterdayWorkout.type) : null;
+    const painWarn = yesterdayWorkout.pain?.length ? ' ⚠️ dolore ' + yesterdayWorkout.pain.join(',') : '';
+    content += `<div class="tip blue">
+      <strong>Ieri:</strong> ${t?.icon || '💪'} ${t?.label || yesterdayWorkout.type} · ${yesterdayWorkout.duration_min} min · RPE ${yesterdayWorkout.rpe || '?'}${painWarn}
+    </div>`;
+  }
+
   if (todayCheckin) {
     content += `<div class="tip green">✓ <strong>Check-in fatto oggi.</strong> Energia: ${['💀','😫','😐','😄','🔥'][todayCheckin.energy - 1]} · ${todayCheckin.workout || 'no workout'}</div>`;
   }
+
   content += plan.actions.map(a => `<div class="row"><div class="ri">→</div><div class="rc"><div class="rt">${a}</div></div></div>`).join('');
+
+  // Prossimi eventi (entro 7 giorni)
+  const eventsSoon = upcomingEvents.filter(e => {
+    const d = new Date(e.date);
+    return (d - now) / 86400000 <= 7;
+  });
+  if (eventsSoon.length > 0) {
+    content += '<div style="font-size:10px;color:var(--mu);text-transform:uppercase;font-weight:700;margin:14px 0 6px;letter-spacing:0.5px">Prossimi 7 giorni</div>';
+    content += eventsSoon.slice(0, 3).map(e => {
+      const t = (typeof EVENT_TYPES !== 'undefined') ? EVENT_TYPES.find(t => t.id === e.type) : null;
+      const d = new Date(e.date);
+      const days = Math.ceil((d - now) / 86400000);
+      return `<div class="row" onclick="navigateTo('workouts')" style="cursor:pointer"><div class="ri">${t?.icon || '📅'}</div><div class="rc"><div class="rt">${t?.label || e.type}</div><div class="rs">tra ${days} gg · ${d.toLocaleDateString('it-IT', { weekday: 'long' })}</div></div></div>`;
+    }).join('');
+  }
+
   document.getElementById('today-content').innerHTML = content;
 
   // Render raduno alert if test1 within 14 days
@@ -969,6 +1076,272 @@ function md(t) {
     .replace(/\n/g, '<br>');
 }
 
+// ── WORKOUTS LOG ────────────────────────────────────────
+
+const WORKOUT_TYPES = [
+  { id: 'pesi_mf', icon: '🏋️', label: 'Pesi MF' },
+  { id: 'z2_cardio', icon: '🌳', label: 'Z2 cardio' },
+  { id: 'z2_lungo', icon: '🌳', label: 'Z2 lungo' },
+  { id: 'hiit_tapis', icon: '🔥', label: 'HIIT tapis' },
+  { id: 'tempo_run', icon: '⏱️', label: 'Tempo run' },
+  { id: 'simulazione_ariet', icon: '🎯', label: 'Sim Ariet' },
+  { id: 'partita', icon: '⚽', label: 'Partita' },
+  { id: 'bici', icon: '🚲', label: 'Bici' },
+  { id: 'padel', icon: '🎾', label: 'Padel' },
+  { id: 'recovery', icon: '🚶', label: 'Recovery' },
+  { id: 'altro', icon: '🏃', label: 'Altro' },
+];
+
+const EVENT_TYPES = [
+  { id: 'partita', icon: '⚽', label: 'Partita' },
+  { id: 'raduno', icon: '🏟️', label: 'Raduno' },
+  { id: 'bici', icon: '🚲', label: 'Bici' },
+  { id: 'padel', icon: '🎾', label: 'Padel' },
+  { id: 'altro', icon: '📅', label: 'Altro' },
+];
+
+let workoutFormData = {};
+let eventFormData = {};
+
+async function renderWorkouts() {
+  const workouts = await Storage.getWorkouts();
+  const weeklyW = await Storage.getWeeklyWorkouts();
+  const events = await Storage.getUpcomingEvents();
+
+  // Stats settimana
+  const totalMin = weeklyW.reduce((s, w) => s + (w.duration_min || 0), 0);
+  const rpes = weeklyW.filter(w => w.rpe).map(w => w.rpe);
+  const avgRPE = rpes.length ? (rpes.reduce((a, b) => a + b, 0) / rpes.length).toFixed(1) : '—';
+
+  // Calcolo carico (TSS-like)
+  const intFactor = { light: 0.4, moderate: 0.7, heavy: 1.0, max: 1.4 };
+  const load = weeklyW.reduce((s, w) => s + (w.duration_min || 0) * (intFactor[w.intensity] || 0.7), 0);
+  const loadLabel = load < 200 ? 'leggero' : load < 400 ? 'medio' : load < 600 ? 'alto' : 'molto alto';
+  const loadColor = load < 200 ? 'var(--blue)' : load < 400 ? 'var(--green)' : load < 600 ? 'var(--yellow)' : 'var(--red)';
+
+  document.getElementById('ws-count').textContent = weeklyW.length;
+  document.getElementById('ws-min').textContent = totalMin;
+  document.getElementById('ws-rpe').textContent = avgRPE;
+  document.getElementById('ws-load').textContent = loadLabel;
+  document.getElementById('ws-load').style.color = loadColor;
+
+  // Lista workouts (ultimi 30)
+  const list = document.getElementById('workouts-list');
+  document.getElementById('workouts-count-tag').textContent = workouts.length;
+
+  if (workouts.length === 0) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--mu);text-align:center;padding:14px">Nessun allenamento loggato.<br>Tap "Logga allenamento" sopra per iniziare.</div>';
+  } else {
+    list.innerHTML = workouts.slice(0, 30).map(w => {
+      const type = WORKOUT_TYPES.find(t => t.id === w.type) || WORKOUT_TYPES[WORKOUT_TYPES.length - 1];
+      const d = new Date(w.date);
+      const dateStr = d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
+      const intensityColor = { light: 'var(--blue)', moderate: 'var(--green)', heavy: 'var(--yellow)', max: 'var(--red)' };
+      const painBadge = w.pain?.length ? `<span style="background:rgba(255,59,92,.15);color:var(--red);padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;margin-left:4px">⚠️ ${w.pain.join(',')}</span>` : '';
+
+      return `<div style="background:var(--s1);border-radius:9px;padding:10px 12px;margin-bottom:6px;cursor:pointer" onclick="deleteWorkoutConfirm('${w.id}')">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:16px">${type.icon}</span>
+          <strong style="font-size:13px;flex:1">${type.label}</strong>
+          ${w.rpe ? `<span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:${intensityColor[w.intensity] || 'var(--mu)'}">RPE ${w.rpe}</span>` : ''}
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mu)">
+          ${dateStr} · ${w.duration_min} min${w.distance_km ? ` · ${w.distance_km} km` : ''}${w.hr_avg ? ` · ${w.hr_avg} bpm` : ''}${painBadge}
+        </div>
+        ${w.notes ? `<div style="font-size:11px;color:var(--mu);margin-top:5px;font-style:italic">${w.notes.slice(0, 100)}${w.notes.length > 100 ? '...' : ''}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  // Eventi futuri
+  const evList = document.getElementById('events-list');
+  if (events.length === 0) {
+    evList.innerHTML = '<div style="font-size:12px;color:var(--mu);text-align:center;padding:14px">Nessun evento programmato.</div>';
+  } else {
+    evList.innerHTML = events.slice(0, 10).map(e => {
+      const type = EVENT_TYPES.find(t => t.id === e.type) || EVENT_TYPES[EVENT_TYPES.length - 1];
+      const d = new Date(e.date);
+      const dateStr = d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
+      const daysAway = Math.ceil((d - new Date()) / 86400000);
+      return `<div style="background:var(--s1);border-radius:9px;padding:10px 12px;margin-bottom:6px;cursor:pointer" onclick="deleteEventConfirm('${e.id}')">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:16px">${type.icon}</span>
+          <div style="flex:1">
+            <strong style="font-size:13px">${type.label}</strong>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mu)">${dateStr}${e.time ? ` · ${e.time}` : ''} · tra ${daysAway} gg</div>
+          </div>
+          ${e.intensity ? `<span class="tag t${e.intensity === 'heavy' ? 'h' : e.intensity === 'light' ? 'g' : 'y'}">${e.intensity}</span>` : ''}
+        </div>
+        ${e.notes ? `<div style="font-size:11px;color:var(--mu);margin-top:5px">${e.notes}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+}
+
+function openWorkoutForm() {
+  workoutFormData = { pain: [] };
+  document.getElementById('workout-modal').classList.add('show');
+
+  // Render type grid
+  document.getElementById('wo-type-grid').innerHTML = WORKOUT_TYPES.map(t => `
+    <div class="opt" data-type="${t.id}" onclick="selectWoType('${t.id}',this)" style="text-align:center;padding:8px 4px;font-size:10px">
+      <div style="font-size:18px">${t.icon}</div>
+      <div>${t.label}</div>
+    </div>`).join('');
+}
+
+function closeWorkoutForm() {
+  document.getElementById('workout-modal').classList.remove('show');
+}
+
+function selectWoType(id, el) {
+  workoutFormData.type = id;
+  document.querySelectorAll('#wo-type-grid .opt').forEach(o => o.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function selectInt(intensity, el) {
+  workoutFormData.intensity = intensity;
+  document.querySelectorAll('#wo-intensity-row .cib').forEach(o => {
+    o.classList.remove('sel-g', 'sel-y', 'sel-m');
+  });
+  const cls = { light: 'sel-g', moderate: 'sel-g', heavy: 'sel-y', max: 'sel-m' };
+  el.classList.add(cls[intensity] || 'sel-y');
+}
+
+function togglePain(zone, el) {
+  if (!workoutFormData.pain) workoutFormData.pain = [];
+  const idx = workoutFormData.pain.indexOf(zone);
+  if (idx >= 0) {
+    workoutFormData.pain.splice(idx, 1);
+    el.classList.remove('sel');
+  } else {
+    workoutFormData.pain.push(zone);
+    el.classList.add('sel');
+  }
+}
+
+async function saveWorkout() {
+  const dur = parseInt(document.getElementById('wo-duration').value);
+  if (!workoutFormData.type) { showToast('Seleziona tipo', 'error'); return; }
+  if (!dur) { showToast('Inserisci durata', 'error'); return; }
+
+  const workout = {
+    type: workoutFormData.type,
+    duration_min: dur,
+    intensity: workoutFormData.intensity || 'moderate',
+    rpe: parseInt(document.getElementById('wo-rpe').value) || null,
+    distance_km: parseFloat(document.getElementById('wo-distance').value) || null,
+    hr_avg: parseInt(document.getElementById('wo-hr-avg').value) || null,
+    hr_max: parseInt(document.getElementById('wo-hr-max').value) || null,
+    kcal_active: parseInt(document.getElementById('wo-kcal').value) || null,
+    pain: workoutFormData.pain || [],
+    notes: document.getElementById('wo-notes').value || null,
+    source: 'manual',
+  };
+
+  await Storage.addWorkout(workout);
+  showToast('Allenamento salvato ✓', 'success');
+  closeWorkoutForm();
+
+  // Reset form
+  ['wo-duration', 'wo-rpe', 'wo-distance', 'wo-hr-avg', 'wo-hr-max', 'wo-kcal', 'wo-notes'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  workoutFormData = {};
+
+  // Avviso se dolore segnalato
+  if (workout.pain.length > 0) {
+    setTimeout(() => {
+      showToast(`⚠️ Dolore segnalato: il piano di domani sarà ridotto`, 'error');
+    }, 1500);
+  }
+
+  renderWorkouts();
+}
+
+async function deleteWorkoutConfirm(id) {
+  if (!confirm('Eliminare questo allenamento?')) return;
+  await Storage.deleteWorkout(id);
+  showToast('Eliminato', 'success');
+  renderWorkouts();
+}
+
+function prefillWorkoutFromURL(params) {
+  openWorkoutForm();
+  const type = params.get('type');
+  if (type) {
+    const opt = document.querySelector(`#wo-type-grid .opt[data-type="${type}"]`);
+    if (opt) selectWoType(type, opt);
+  }
+  const dur = params.get('duration');
+  if (dur) document.getElementById('wo-duration').value = dur;
+  const dist = params.get('distance');
+  if (dist) document.getElementById('wo-distance').value = dist;
+  const hr = params.get('hr');
+  if (hr) document.getElementById('wo-hr-avg').value = hr;
+  const kcal = params.get('kcal');
+  if (kcal) document.getElementById('wo-kcal').value = kcal;
+}
+
+// ── EVENTS ──────────────────────────────────────────────
+function openEventForm() {
+  eventFormData = {};
+  document.getElementById('event-modal').classList.add('show');
+  document.getElementById('ev-type-grid').innerHTML = EVENT_TYPES.map(t => `
+    <div class="opt" data-type="${t.id}" onclick="selectEvType('${t.id}',this)" style="text-align:center;padding:8px 4px;font-size:10px">
+      <div style="font-size:18px">${t.icon}</div>
+      <div>${t.label}</div>
+    </div>`).join('');
+  // Default date = tomorrow
+  const tom = new Date();
+  tom.setDate(tom.getDate() + 1);
+  document.getElementById('ev-date').value = tom.toISOString().split('T')[0];
+}
+
+function closeEventForm() {
+  document.getElementById('event-modal').classList.remove('show');
+}
+
+function selectEvType(id, el) {
+  eventFormData.type = id;
+  document.querySelectorAll('#ev-type-grid .opt').forEach(o => o.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function selectEvInt(intensity, el) {
+  eventFormData.intensity = intensity;
+  el.parentElement.querySelectorAll('.cib').forEach(o => o.classList.remove('sel-g', 'sel-y', 'sel-m'));
+  const cls = { light: 'sel-g', moderate: 'sel-g', heavy: 'sel-y' };
+  el.classList.add(cls[intensity] || 'sel-y');
+}
+
+async function saveEvent() {
+  const date = document.getElementById('ev-date').value;
+  if (!eventFormData.type) { showToast('Seleziona tipo', 'error'); return; }
+  if (!date) { showToast('Inserisci data', 'error'); return; }
+
+  const event = {
+    type: eventFormData.type,
+    date: new Date(date).toISOString(),
+    time: document.getElementById('ev-time').value || null,
+    intensity: eventFormData.intensity || 'moderate',
+    notes: document.getElementById('ev-notes').value || null,
+  };
+
+  await Storage.addEvent(event);
+  showToast('Evento salvato ✓', 'success');
+  closeEventForm();
+  renderWorkouts();
+}
+
+async function deleteEventConfirm(id) {
+  if (!confirm('Eliminare questo evento?')) return;
+  await Storage.deleteEvent(id);
+  showToast('Eliminato', 'success');
+  renderWorkouts();
+}
+
 // ── INIT ON LOAD ────────────────────────────────────────
 window.addEventListener('load', init);
 
@@ -999,3 +1372,16 @@ window.clearData = clearData;
 window.quickLogWeight = quickLogWeight;
 window.quickLogWeightValue = quickLogWeightValue;
 window.drawWeightChart = drawWeightChart;
+window.openWorkoutForm = openWorkoutForm;
+window.closeWorkoutForm = closeWorkoutForm;
+window.selectWoType = selectWoType;
+window.selectInt = selectInt;
+window.togglePain = togglePain;
+window.saveWorkout = saveWorkout;
+window.deleteWorkoutConfirm = deleteWorkoutConfirm;
+window.openEventForm = openEventForm;
+window.closeEventForm = closeEventForm;
+window.selectEvType = selectEvType;
+window.selectEvInt = selectEvInt;
+window.saveEvent = saveEvent;
+window.deleteEventConfirm = deleteEventConfirm;

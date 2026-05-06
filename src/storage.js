@@ -2,7 +2,7 @@
 // Robust local storage for check-ins, photos, settings
 
 const DB_NAME = 'CoachAlexDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // Stores schema:
 // - profile: user profile (single object)
@@ -28,6 +28,8 @@ function openDB() {
       if (!db.objectStoreNames.contains('mealPhotos')) db.createObjectStore('mealPhotos', { keyPath: 'date' });
       if (!db.objectStoreNames.contains('coachHistory')) db.createObjectStore('coachHistory', { keyPath: 'date' });
       if (!db.objectStoreNames.contains('apiUsage')) db.createObjectStore('apiUsage', { keyPath: 'month' });
+      if (!db.objectStoreNames.contains('workouts')) db.createObjectStore('workouts', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('events')) db.createObjectStore('events', { keyPath: 'id' });
     };
     req.onsuccess = e => { dbInstance = e.target.result; resolve(dbInstance); };
     req.onerror = e => reject(e);
@@ -180,10 +182,52 @@ const Storage = {
     return await dbGet('apiUsage', month) || { month, coach: 0, vision: 0 };
   },
 
+  // Workouts (training log)
+  async addWorkout(w) {
+    if (!w.id) w.id = `w_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    if (!w.date) w.date = new Date().toISOString();
+    return dbPut('workouts', w);
+  },
+  async getWorkouts() {
+    const all = await dbGetAll('workouts');
+    return all.sort((a, b) => new Date(b.date) - new Date(a.date));
+  },
+  async getRecentWorkouts(n = 10) {
+    const all = await this.getWorkouts();
+    return all.slice(0, n);
+  },
+  async getWeeklyWorkouts() {
+    const all = await this.getWorkouts();
+    const weekAgo = Date.now() - 7 * 86400000;
+    return all.filter(w => new Date(w.date).getTime() > weekAgo);
+  },
+  async deleteWorkout(id) {
+    return dbDelete('workouts', id);
+  },
+
+  // Events extra (matches, bike rides, padel, raduni)
+  async addEvent(e) {
+    if (!e.id) e.id = `e_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    if (!e.date) e.date = new Date().toISOString();
+    return dbPut('events', e);
+  },
+  async getEvents() {
+    const all = await dbGetAll('events');
+    return all.sort((a, b) => new Date(a.date) - new Date(b.date));
+  },
+  async getUpcomingEvents() {
+    const all = await this.getEvents();
+    const now = Date.now();
+    return all.filter(e => new Date(e.date).getTime() >= now);
+  },
+  async deleteEvent(id) {
+    return dbDelete('events', id);
+  },
+
   // Backup / Restore
   async exportAll() {
     return {
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       profile: await this.getProfile(),
       checkins: await dbGetAll('checkins'),
@@ -192,6 +236,8 @@ const Storage = {
       mealPhotos: await dbGetAll('mealPhotos'),
       coachHistory: await dbGetAll('coachHistory'),
       apiUsage: await dbGetAll('apiUsage'),
+      workouts: await dbGetAll('workouts'),
+      events: await dbGetAll('events'),
     };
   },
   async importAll(data) {
@@ -202,6 +248,8 @@ const Storage = {
     for (const m of (data.mealPhotos || [])) await dbPut('mealPhotos', m);
     for (const h of (data.coachHistory || [])) await dbPut('coachHistory', h);
     for (const u of (data.apiUsage || [])) await dbPut('apiUsage', u);
+    for (const w of (data.workouts || [])) await dbPut('workouts', w);
+    for (const e of (data.events || [])) await dbPut('events', e);
     return true;
   },
 
@@ -213,6 +261,8 @@ const Storage = {
     await dbClear('mealPhotos');
     await dbClear('coachHistory');
     await dbClear('apiUsage');
+    await dbClear('workouts');
+    await dbClear('events');
     return true;
   },
 };
