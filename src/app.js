@@ -9,29 +9,38 @@ let appState = {
 
 // ── INITIALIZATION ──────────────────────────────────────
 async function init() {
-  // Load profile
-  appState.profile = await Storage.getProfile();
+  try {
+    // Load profile
+    appState.profile = await Storage.getProfile();
 
-  // Show onboarding if first run
-  if (!appState.profile.onboardingDone) {
-    document.getElementById('onboarding').classList.add('show');
-    return;
-  }
+    // Show onboarding if first run
+    if (!appState.profile.onboardingDone) {
+      document.getElementById('onboarding').classList.add('show');
+      return;
+    }
 
-  // Handle URL actions (from Shortcuts)
-  await handleURLActions();
+    // Handle URL actions (from Shortcuts)
+    await handleURLActions();
 
-  // Show install banner if not installed
-  if (!Notifications.isInstalledPWA() && !localStorage.getItem('install_dismissed')) {
-    document.getElementById('install-banner').style.display = 'flex';
-  }
+    // Show install banner if not installed
+    if (!Notifications.isInstalledPWA() && !localStorage.getItem('install_dismissed')) {
+      document.getElementById('install-banner').style.display = 'flex';
+    }
 
-  // Render initial state
-  await renderAll();
+    // Render initial state
+    await renderAll();
 
-  // Schedule evening check-in if enabled
-  if (appState.profile.notifications && Notification.permission === 'granted') {
-    Notifications.scheduleEveningCheckin();
+    // Schedule evening check-in if enabled
+    if (appState.profile.notifications && Notification.permission === 'granted') {
+      Notifications.scheduleEveningCheckin();
+    }
+  } catch (e) {
+    console.error('[INIT ERROR]', e);
+    document.body.insertAdjacentHTML('afterbegin',
+      `<div style="position:fixed;top:0;left:0;right:0;background:#ff3b5c;color:#fff;padding:12px;font:13px system-ui;z-index:9999">
+        <strong>Errore avvio app.</strong> Disinstalla dalla Home (long-press → Rimuovi) e reinstalla da Safari.<br>
+        <small style="opacity:.85">${(e?.message || e).toString().slice(0,200)}</small>
+      </div>`);
   }
 }
 
@@ -179,6 +188,8 @@ async function renderOggi() {
     else if (yesterdayCheckin.sleep === '6-7') { semaforoPunti += 1; }
     if (yesterdayCheckin.energy <= 2) { semaforoPunti += 3; semaforoReasons.push('energia bassa'); }
     else if (yesterdayCheckin.energy === 3) { semaforoPunti += 1; }
+    if (yesterdayCheckin.foodLevel === 'saltato') { semaforoPunti += 2; semaforoReasons.push('pasto saltato'); }
+    else if (yesterdayCheckin.foodLevel === 'ridotto') { semaforoPunti += 1; semaforoReasons.push('pasto ridotto'); }
   }
 
   if (yesterdayWorkout?.pain?.length > 0) {
@@ -278,10 +289,24 @@ async function renderOggi() {
   // Workout di ieri
   if (yesterdayWorkout) {
     const t = (typeof WORKOUT_TYPES !== 'undefined') ? WORKOUT_TYPES.find(t => t.id === yesterdayWorkout.type) : null;
-    const painWarn = yesterdayWorkout.pain?.length ? ' ⚠️ dolore ' + yesterdayWorkout.pain.join(',') : '';
-    content += `<div class="tip blue">
-      <strong>Ieri:</strong> ${t?.icon || '💪'} ${t?.label || yesterdayWorkout.type} · ${yesterdayWorkout.duration_min} min · RPE ${yesterdayWorkout.rpe || '?'}${painWarn}
-    </div>`;
+    if (yesterdayWorkout.pain?.length > 0) {
+      content += `<div class="urgent-banner" style="margin-bottom:10px">
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="font-size:24px">🦵</div>
+          <div style="flex:1">
+            <div class="ub-title">Ieri dolore: ${yesterdayWorkout.pain.join(', ')}</div>
+            <div class="ub-sub">
+              Oggi: ghiaccio 3×15 min · cammino lento ≤20 min · NO corsa · NO HIIT.<br>
+              Pesi upper body OK. Idratazione + pasto regolare.
+            </div>
+          </div>
+        </div>
+      </div>`;
+    } else {
+      content += `<div class="tip blue">
+        <strong>Ieri:</strong> ${t?.icon || '💪'} ${t?.label || yesterdayWorkout.type} · ${yesterdayWorkout.duration_min} min · RPE ${yesterdayWorkout.rpe || '?'}
+      </div>`;
+    }
   }
 
   if (todayCheckin) {

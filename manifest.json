@@ -9,6 +9,7 @@
   "theme_color": "#07080d",
   "scope": "./",
   "lang": "it",
+  "id": "/",
   "categories": ["health", "fitness", "lifestyle"],
   "icons": [
     {

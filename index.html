@@ -588,6 +588,13 @@ hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
     <div class="cib" id="cw-rest" onclick="ciW('rest')"><span class="bg">😴</span>Riposo</div>
   </div>
 
+  <div class="ci-lbl">🍽️ PASTO PRINCIPALE OGGI</div>
+  <div class="ci-row">
+    <div class="cib" onclick="ciS('foodLevel','saltato',this)"><span class="bg">⏭️</span>Saltato</div>
+    <div class="cib" onclick="ciS('foodLevel','ridotto',this)"><span class="bg">🥗</span>Ridotto</div>
+    <div class="cib" onclick="ciS('foodLevel','normale',this)"><span class="bg">🍝</span>Normale</div>
+  </div>
+
   <div class="ci-lbl">⚖️ PESO (a digiuno)</div>
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
     <input type="number" class="inp num" id="ci-w" placeholder="78.7" step="0.1" style="flex:1">
