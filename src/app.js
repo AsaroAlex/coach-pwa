@@ -1429,6 +1429,10 @@ async function renderSettings() {
   document.getElementById('set-age').value = profile.age || 25;
   document.getElementById('set-hrmax').value = profile.hrmax || 202;
   document.getElementById('set-target').value = profile.target || 70;
+  const setH = document.getElementById('set-height'); if (setH) setH.value = profile.height || 175;
+  const setS = document.getElementById('set-sex'); if (setS) setS.value = profile.sex || 'M';
+  const setBf = document.getElementById('set-bf'); if (setBf) setBf.value = profile.bf || 26.8;
+  const setMa = document.getElementById('set-meso-anchor'); if (setMa) setMa.value = profile.mesoAnchor || '2026-04-06';
   document.getElementById('cap-coach').value = profile.caps?.coach ?? 3;
   document.getElementById('cap-vision').value = profile.caps?.vision ?? 5;
   document.getElementById('api-key').value = profile.apiKey || '';
@@ -1475,9 +1479,20 @@ function renderShortcutsHub() {
 
 async function saveAPI() {
   const key = document.getElementById('api-key').value.trim();
+  if (!key) {
+    showToast('Inserisci una API key prima', 'error');
+    return;
+  }
+  // Valida prima di salvare: niente chiavi non funzionanti in storage.
+  showToast('Verifico la key...', 'success');
+  const result = await API.testConnection(key);
+  if (!result.ok) {
+    showToast('Key non valida: ' + result.message, 'error');
+    return;
+  }
   appState.profile.apiKey = key;
   await Storage.saveProfile(appState.profile);
-  showToast('API key salvata ✓', 'success');
+  showToast('API key validata e salvata ✓', 'success');
 }
 
 async function testAPI() {
@@ -1489,6 +1504,29 @@ async function testAPI() {
   showToast('Testando...', 'success');
   const result = await API.testConnection(key);
   showToast(result.message, result.ok ? 'success' : 'error');
+}
+
+async function saveProfileFields() {
+  const w = parseFloat(document.getElementById('set-weight').value) || 78.7;
+  const a = parseInt(document.getElementById('set-age').value) || 25;
+  const hr = parseInt(document.getElementById('set-hrmax').value) || 202;
+  const t = parseFloat(document.getElementById('set-target').value) || 70;
+  const h = parseFloat(document.getElementById('set-height')?.value) || 175;
+  const s = document.getElementById('set-sex')?.value || 'M';
+  const bf = parseFloat(document.getElementById('set-bf')?.value) || null;
+  const ma = document.getElementById('set-meso-anchor')?.value || '2026-04-06';
+
+  appState.profile.weight = w;
+  appState.profile.age = a;
+  appState.profile.hrmax = hr;
+  appState.profile.target = t;
+  appState.profile.height = h;
+  appState.profile.sex = s;
+  if (bf && bf > 0 && bf < 80) appState.profile.bf = bf;
+  appState.profile.mesoAnchor = ma;
+  await Storage.saveProfile(appState.profile);
+  showToast('Profilo salvato ✓', 'success');
+  await renderAll();
 }
 
 async function saveCaps() {
@@ -1979,6 +2017,7 @@ window.saveProgressPhoto = saveProgressPhoto;
 window.saveAPI = saveAPI;
 window.testAPI = testAPI;
 window.saveCaps = saveCaps;
+window.saveProfileFields = saveProfileFields;
 window.toggleNotifications = toggleNotifications;
 window.toggleTheme = toggleTheme;
 window.toggleProgressPhoto = toggleProgressPhoto;

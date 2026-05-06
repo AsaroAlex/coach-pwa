@@ -92,21 +92,30 @@ const Storage = {
   // Profile
   async getProfile() {
     const p = await dbGet('profile', 'main');
-    return p || {
+    const defaults = {
       id: 'main',
       name: 'Alex',
       weight: 78.7,
       age: 25,
+      height: 175,
+      sex: 'M',
       hrmax: 202,
       rhr: 85,
       target: 70,
       bf: 26.8,
+      kcalOffset: 0,
+      macroDisplayMode: 'toggle',
+      mesoAnchor: '2026-04-06',
       onboardingDone: false,
       apiKey: '',
       caps: { coach: 3, vision: 5 },
       notifications: false,
       progressPhotoReminder: true,
+      bulkImportLast: null,
     };
+    if (!p) return defaults;
+    // Merge defaults per back-compat: campi nuovi mai sovrascritti se già presenti.
+    return { ...defaults, ...p };
   },
   async saveProfile(p) {
     p.id = 'main';

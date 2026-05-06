@@ -1012,6 +1012,42 @@ hr{border:none;border-top:1px solid var(--brd-soft);margin:11px 0;}
         </div>
         <input type="number" class="inp" id="set-target" step="0.5" value="70" style="width:60px;text-align:center">
       </div>
+      <div class="settings-row">
+        <div class="settings-icon">📏</div>
+        <div class="settings-content">
+          <div class="settings-name">Altezza (cm)</div>
+          <div class="settings-desc">Serve a TDEE Mifflin (errore ±300 kcal se sbagliata)</div>
+        </div>
+        <input type="number" class="inp" id="set-height" value="175" style="width:60px;text-align:center">
+      </div>
+      <div class="settings-row">
+        <div class="settings-icon">🧬</div>
+        <div class="settings-content">
+          <div class="settings-name">Sesso biologico</div>
+          <div class="settings-desc">Per BMR (M/F)</div>
+        </div>
+        <select class="inp" id="set-sex" style="width:60px;text-align:center">
+          <option value="M">M</option>
+          <option value="F">F</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <div class="settings-icon">💪</div>
+        <div class="settings-content">
+          <div class="settings-name">BF % (smart scale)</div>
+          <div class="settings-desc">Se inserito, TDEE usa Katch-McArdle (più accurato per atleti)</div>
+        </div>
+        <input type="number" class="inp" id="set-bf" step="0.1" value="26.8" style="width:60px;text-align:center">
+      </div>
+      <div class="settings-row">
+        <div class="settings-icon">📅</div>
+        <div class="settings-content">
+          <div class="settings-name">Inizio mesociclo</div>
+          <div class="settings-desc">Anchor per periodizzazione 3+1 (deload settimana 4)</div>
+        </div>
+        <input type="date" class="inp" id="set-meso-anchor" value="2026-04-06" style="width:135px;text-align:center;font-size:11px">
+      </div>
+      <button class="btn-s" onclick="saveProfileFields()" style="width:100%;margin-top:8px">Salva profilo</button>
     </div>
   </div>
 
