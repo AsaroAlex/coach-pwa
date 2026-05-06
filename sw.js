@@ -1,111 +1,1125 @@
-// Coach Alex Service Worker v1.0
-const CACHE_NAME = 'coach-alex-v1';
-const ASSETS = [
-  './',
-  './index.html',
-  './manifest.json',
-  './src/app.js',
-  './src/api.js',
-  './src/storage.js',
-  './src/health.js',
-  './src/notifications.js',
-  './assets/icon-180.png',
-  './assets/icon-192.png',
-  './assets/icon-512.png',
-];
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>Coach Alex</title>
 
-// Install: precache static assets
-self.addEventListener('install', event => {
-  console.log('[SW] Installing v1');
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
-  );
-});
+<!-- PWA Configuration -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#07080d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Coach Alex">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
 
-// Activate: cleanup old caches
-self.addEventListener('activate', event => {
-  console.log('[SW] Activating');
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
-});
+<!-- iOS Splash -->
+<link rel="apple-touch-startup-image" href="assets/splash.png">
 
-// Fetch strategy:
-// - API calls (anthropic.com): network only, no cache
-// - Static assets: cache-first, fallback network
-// - HTML: network-first (for updates), fallback cache
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+:root{
+  --bg:#07080d;--s1:#0f1018;--s2:#161820;--brd:#1e2030;
+  --acc:#ff5f1f;--ag:rgba(255,95,31,.1);
+  --blue:#3da8ff;--green:#00e596;--yellow:#ffe566;
+  --red:#ff3b5c;--purple:#b794ff;--pink:#ff4d8f;
+  --text:#eeeef8;--mu:#525470;--card:#0c0f18;
+  --safe-top:env(safe-area-inset-top,0);
+  --safe-bot:env(safe-area-inset-bottom,0);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;}
+html,body{overscroll-behavior:none;}
+body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;font-size:14px;padding-top:var(--safe-top);padding-bottom:var(--safe-bot);}
 
-  // Skip non-GET requests
-  if (event.request.method !== 'GET') return;
+/* Top status bar (pwa) */
+.statusbar{position:sticky;top:0;background:var(--bg);z-index:60;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--brd);}
+.sb-greet{font-size:11px;color:var(--mu);}
+.sb-greet strong{color:var(--text);}
+.sb-streak{display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:var(--acc);}
 
-  // Skip Anthropic API (always network, never cache)
-  if (url.hostname.includes('anthropic.com') || url.hostname.includes('api.anthropic')) {
-    return;
-  }
+/* Bottom Tab Bar (iOS-style) */
+.tabbar{position:fixed;bottom:0;left:0;right:0;background:rgba(15,16,24,.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--brd);display:flex;padding:8px 4px calc(8px + var(--safe-bot));z-index:100;}
+.tab{flex:1;background:none;border:none;padding:6px 2px;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--mu);font-family:'Syne',sans-serif;font-size:8px;font-weight:700;text-transform:uppercase;cursor:pointer;transition:all .15s;}
+.tab .ti{font-size:18px;line-height:1;}
+.tab.active{color:var(--acc);}
+.tab.urgent{color:var(--red);}
+.tab.urgent.active{color:var(--red);}
 
-  // HTML: network-first
-  if (event.request.mode === 'navigate' || event.request.destination === 'document') {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-          return response;
-        })
-        .catch(() => caches.match(event.request) || caches.match('./index.html'))
-    );
-    return;
-  }
+/* Pages */
+.pg{display:none;padding:14px 14px 90px;max-width:560px;margin:0 auto;}
+.pg.active{display:block;animation:fadeIn .25s ease;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
 
-  // Other assets: cache-first
-  event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        if (!response || response.status !== 200) return response;
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-        return response;
-      });
-    })
-  );
-});
+/* Header */
+.ph{margin-bottom:14px;}
+.ph-g{font-size:11px;color:var(--mu);margin-bottom:2px;}
+.ph-t{font-size:22px;font-weight:800;line-height:1.2;}
+.ph-t .a{color:var(--acc);}
+.ph-t .r{color:var(--red);}
 
-// Handle push notifications (future)
-self.addEventListener('push', event => {
-  const data = event.data ? event.data.json() : {};
-  const options = {
-    body: data.body || 'Reminder Coach Alex',
-    icon: 'assets/icon-192.png',
-    badge: 'assets/icon-192.png',
-    tag: data.tag || 'coach-reminder',
-    requireInteraction: false,
-    actions: [
-      { action: 'open', title: 'Apri' },
-      { action: 'dismiss', title: 'Più tardi' },
-    ],
-  };
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'Coach Alex', options)
-  );
-});
+/* Blocks */
+.blk{background:var(--card);border:1px solid var(--brd);border-radius:14px;overflow:hidden;margin-bottom:11px;}
+.bh{padding:11px 14px;display:flex;align-items:center;gap:9px;border-bottom:1px solid var(--brd);}
+.bi{font-size:16px;}
+.bt{font-weight:700;font-size:13px;flex:1;}
+.tag{font-size:9px;padding:3px 8px;border-radius:20px;font-weight:700;}
+.tu{background:rgba(61,168,255,.12);color:var(--blue);}
+.th{background:rgba(255,95,31,.12);color:var(--acc);}
+.tc{background:rgba(183,148,255,.12);color:var(--purple);}
+.tr{background:rgba(82,84,112,.2);color:var(--mu);}
+.tg{background:rgba(0,229,150,.1);color:var(--green);}
+.ty{background:rgba(255,229,102,.1);color:var(--yellow);}
+.tr2{background:rgba(255,59,92,.12);color:var(--red);}
+.bb{padding:12px 14px;}
 
-// Notification click handler
-self.addEventListener('notificationclick', event => {
-  event.notification.close();
-  if (event.action === 'dismiss') return;
-  event.waitUntil(
-    clients.matchAll({ type: 'window' }).then(clientList => {
-      if (clientList.length > 0) {
-        return clientList[0].focus();
-      }
-      return clients.openWindow('./');
-    })
-  );
-});
+/* Rows */
+.row{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid rgba(30,32,48,.9);}
+.row:last-child{border-bottom:none;}
+.ri{font-size:14px;flex-shrink:0;margin-top:1px;}
+.rc{flex:1;}
+.rt{font-size:13px;font-weight:600;}
+.rs{font-size:11px;color:var(--mu);margin-top:2px;line-height:1.4;}
+.rv{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--blue);text-align:right;flex-shrink:0;}
+
+/* Stat row */
+.sr{display:flex;gap:6px;margin-bottom:13px;}
+.sp{flex:1;background:var(--s1);border:1px solid var(--brd);border-radius:9px;padding:8px 5px;text-align:center;}
+.sv{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:500;line-height:1;}
+.sl{font-size:9px;color:var(--mu);font-weight:700;text-transform:uppercase;margin-top:2px;}
+.sp.hi{border-color:rgba(255,95,31,.4);background:rgba(255,95,31,.04);}
+.sp.hi .sv{color:var(--acc);}
+.sp.red-sp{border-color:rgba(255,59,92,.4);background:rgba(255,59,92,.04);}
+.sp.red-sp .sv{color:var(--red);}
+.sp.ok .sv{color:var(--green);}
+
+/* Tips */
+.tip{border-radius:9px;padding:10px 12px;font-size:12px;line-height:1.55;margin-bottom:10px;}
+.tip.orange{background:rgba(255,95,31,.05);border:1px solid rgba(255,95,31,.2);color:var(--mu);}
+.tip.blue{background:rgba(61,168,255,.04);border:1px solid rgba(61,168,255,.2);color:var(--mu);}
+.tip.green{background:rgba(0,229,150,.04);border:1px solid rgba(0,229,150,.2);color:var(--mu);}
+.tip.red{background:rgba(255,59,92,.04);border:1px solid rgba(255,59,92,.25);color:var(--mu);}
+.tip.yellow{background:rgba(255,229,102,.04);border:1px solid rgba(255,229,102,.2);color:var(--mu);}
+.tip strong{color:var(--text);}
+
+/* Urgent Banner */
+.urgent-banner{background:linear-gradient(135deg,rgba(255,59,92,.12),rgba(255,95,31,.08));border:1.5px solid rgba(255,59,92,.4);border-radius:12px;padding:14px 16px;margin-bottom:13px;}
+.ub-title{font-size:15px;font-weight:800;color:var(--red);margin-bottom:2px;}
+.ub-sub{font-size:12px;color:var(--mu);line-height:1.5;}
+.countdown{display:flex;gap:8px;margin-top:8px;}
+.cd-item{flex:1;background:rgba(255,59,92,.1);border:1px solid rgba(255,59,92,.2);border-radius:8px;padding:8px 4px;text-align:center;}
+.cd-num{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:500;color:var(--red);line-height:1;}
+.cd-lbl{font-size:9px;color:var(--mu);font-weight:700;text-transform:uppercase;margin-top:2px;}
+
+/* Coach msg */
+.cmsg{background:var(--s1);border-left:3px solid var(--acc);border-radius:0 9px 9px 0;padding:10px 12px;font-size:12px;color:var(--mu);line-height:1.6;margin-bottom:12px;}
+.cmsg strong{color:var(--text);}
+
+/* Quick Actions Grid */
+.quick-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:13px;}
+.qa{background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:14px 12px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:left;}
+.qa:active{transform:scale(0.97);background:var(--s2);}
+.qa-i{font-size:22px;}
+.qa-n{font-size:12px;font-weight:700;color:var(--text);}
+.qa-s{font-size:10px;color:var(--mu);}
+.qa.primary{border-color:rgba(255,95,31,.3);background:linear-gradient(135deg,rgba(255,95,31,.05),rgba(255,95,31,.01));}
+
+/* Zone cards */
+.zone{border-radius:10px;padding:11px 13px;margin-bottom:7px;display:flex;align-items:center;gap:11px;}
+.zone.z2{background:rgba(61,168,255,.05);border:1px solid rgba(61,168,255,.2);}
+.zone.z3{background:rgba(255,229,102,.04);border:1px solid rgba(255,229,102,.2);}
+.zone.z4{background:rgba(255,95,31,.05);border:1px solid rgba(255,95,31,.2);}
+.zone.z5{background:rgba(255,59,92,.05);border:1px solid rgba(255,59,92,.2);}
+.zi{font-size:22px;flex-shrink:0;}
+.zn{flex:1;}
+.zname{font-size:12px;font-weight:700;margin-bottom:1px;}
+.zone.z2 .zname{color:var(--blue);}
+.zone.z3 .zname{color:var(--yellow);}
+.zone.z4 .zname{color:var(--acc);}
+.zone.z5 .zname{color:var(--red);}
+.zdesc{font-size:11px;color:var(--mu);line-height:1.4;}
+.zbpm{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:500;text-align:right;flex-shrink:0;}
+.zone.z2 .zbpm{color:var(--blue);}
+.zone.z3 .zbpm{color:var(--yellow);}
+.zone.z4 .zbpm{color:var(--acc);}
+.zone.z5 .zbpm{color:var(--red);}
+
+/* Inputs & Forms */
+.inp{width:100%;background:var(--s2);border:1.5px solid var(--brd);border-radius:10px;padding:10px 12px;color:var(--text);font-family:'Syne',sans-serif;font-size:13px;resize:none;outline:none;line-height:1.5;transition:border-color .14s;-webkit-appearance:none;}
+.inp:focus{border-color:var(--blue);}
+.inp.num{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:500;text-align:center;height:55px;}
+.inp.num::placeholder{font-size:13px;font-weight:400;color:var(--mu);}
+
+/* Options */
+.opts{display:flex;flex-wrap:wrap;gap:6px;}
+.opt{background:var(--s1);border:1.5px solid var(--brd);border-radius:8px;padding:7px 11px;cursor:pointer;font-size:12px;font-weight:600;transition:all .13s;}
+.opt.sel{border-color:var(--acc);background:var(--ag);color:var(--acc);}
+
+/* Buttons */
+.btn{width:100%;background:var(--acc);color:white;border:none;border-radius:10px;padding:13px;font-family:'Syne',sans-serif;font-size:14px;font-weight:800;cursor:pointer;transition:all .17s;box-shadow:0 3px 14px rgba(255,95,31,.2);}
+.btn:active{transform:translateY(1px);}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn-s{background:var(--s2);color:var(--text);border:1.5px solid var(--brd);border-radius:10px;padding:10px 16px;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer;}
+
+/* Loading */
+.ld{display:none;align-items:center;gap:8px;padding:12px;color:var(--mu);font-size:12px;justify-content:center;}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--acc);animation:b 1s infinite;}
+.dot:nth-child(2){animation-delay:.15s;}.dot:nth-child(3){animation-delay:.3s;}
+@keyframes b{0%,80%,100%{transform:scale(.8);opacity:.5;}40%{transform:scale(1.1);opacity:1;}}
+
+/* AI response */
+.air{background:linear-gradient(135deg,rgba(255,95,31,.04),rgba(61,168,255,.03));border:1px solid rgba(255,95,31,.15);border-radius:12px;padding:14px;font-size:13px;line-height:1.75;color:var(--text);margin-top:10px;}
+.air h3{font-size:13px;font-weight:700;color:var(--acc);margin:12px 0 5px;}
+.air strong{color:var(--acc);}
+.air em{color:var(--green);font-style:normal;font-weight:600;}
+.air ul{padding-left:13px;margin:4px 0;}
+.air li{margin:2px 0;color:var(--mu);}
+
+/* Check-in */
+.ci-lbl{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mu);margin-bottom:6px;margin-top:12px;}
+.ci-row{display:flex;gap:5px;margin-bottom:10px;}
+.cib{flex:1;background:var(--s2);border:1.5px solid var(--brd);border-radius:9px;padding:9px 3px;cursor:pointer;text-align:center;font-family:'Syne',sans-serif;font-size:10px;font-weight:700;transition:all .13s;display:flex;flex-direction:column;align-items:center;gap:2px;}
+.cib .bg{font-size:18px;}
+.cib.e1.sel{border-color:#ff4444;background:rgba(255,68,68,.05);color:#ff4444;}
+.cib.e2.sel{border-color:orange;background:rgba(255,140,0,.05);color:orange;}
+.cib.e3.sel{border-color:var(--yellow);background:rgba(255,229,102,.05);color:var(--yellow);}
+.cib.e4.sel{border-color:#7de8a0;background:rgba(125,232,160,.05);color:#7de8a0;}
+.cib.e5.sel{border-color:var(--green);background:rgba(0,229,150,.05);color:var(--green);}
+.cib.sel-g{border-color:var(--green);background:rgba(0,229,150,.05);color:var(--green);}
+.cib.sel-y{border-color:var(--yellow);background:rgba(255,229,102,.05);color:var(--yellow);}
+.cib.sel-m{border-color:var(--mu);background:rgba(82,84,112,.05);color:var(--mu);}
+
+/* Photo upload */
+.photo-zone{border:2px dashed var(--brd);border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s1);}
+.photo-zone:active{background:var(--s2);}
+.photo-zone.has-image{padding:0;border-style:solid;}
+.photo-zone img{width:100%;height:200px;object-fit:cover;border-radius:10px;display:block;}
+.photo-icon{font-size:36px;margin-bottom:6px;}
+.photo-text{font-size:12px;color:var(--mu);}
+
+/* Settings */
+.settings-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid rgba(30,32,48,.7);}
+.settings-row:last-child{border-bottom:none;}
+.settings-icon{font-size:18px;flex-shrink:0;width:30px;text-align:center;}
+.settings-content{flex:1;}
+.settings-name{font-size:13px;font-weight:600;}
+.settings-desc{font-size:11px;color:var(--mu);margin-top:2px;}
+.toggle{width:42px;height:24px;background:var(--brd);border-radius:12px;position:relative;cursor:pointer;transition:background .18s;flex-shrink:0;}
+.toggle.on{background:var(--green);}
+.toggle::after{content:'';position:absolute;width:18px;height:18px;background:white;border-radius:50%;top:3px;left:3px;transition:left .18s;}
+.toggle.on::after{left:21px;}
+
+/* Streak fire animation */
+@keyframes fire{0%,100%{transform:scale(1) rotate(-2deg);}50%{transform:scale(1.05) rotate(2deg);}}
+.streak-big{font-family:'JetBrains Mono',monospace;font-size:60px;font-weight:500;color:var(--acc);line-height:1;text-align:center;animation:fire 2s ease-in-out infinite;}
+
+/* Progress bars */
+.pblk{background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:13px;margin-bottom:10px;}
+.plbl{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mu);margin-bottom:8px;}
+.pbar-w{height:6px;background:var(--brd);border-radius:3px;overflow:hidden;margin-top:7px;}
+.pbar{height:100%;border-radius:3px;transition:width .7s cubic-bezier(.4,0,.2,1);}
+
+/* Chart */
+.chart-area{position:relative;height:120px;margin:8px 0;}
+canvas{width:100%;height:100%;display:block;}
+
+hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--brd);border-radius:2px;}
+
+/* Onboarding modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(10px);z-index:200;display:none;align-items:center;justify-content:center;padding:14px;padding-top:calc(14px + var(--safe-top));padding-bottom:calc(14px + var(--safe-bot));}
+.modal-overlay.show{display:flex;}
+.modal{background:var(--bg);border:1px solid var(--brd);border-radius:18px;width:100%;max-width:480px;max-height:90vh;overflow:auto;padding:24px;}
+.modal h2{font-size:21px;margin-bottom:8px;}
+.modal p{font-size:13px;color:var(--mu);line-height:1.6;margin-bottom:14px;}
+
+/* Toast */
+.toast{position:fixed;top:calc(20px + var(--safe-top));left:50%;transform:translateX(-50%) translateY(-200%);background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:12px 18px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:300;transition:transform .3s cubic-bezier(.4,0,.2,1);max-width:90%;}
+.toast.show{transform:translateX(-50%) translateY(0);}
+.toast.success{border-color:rgba(0,229,150,.4);color:var(--green);}
+.toast.error{border-color:rgba(255,59,92,.4);color:var(--red);}
+
+/* Install banner */
+.install-banner{background:linear-gradient(135deg,rgba(61,168,255,.1),rgba(255,95,31,.05));border:1px solid rgba(61,168,255,.3);border-radius:12px;padding:12px 14px;margin-bottom:11px;display:flex;align-items:center;gap:10px;}
+.install-banner button{background:var(--blue);color:white;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;}
+</style>
+</head>
+<body>
+
+<!-- STATUS BAR -->
+<div class="statusbar" id="statusbar">
+  <div class="sb-greet"><span id="sb-time">Buongiorno</span> · <strong id="sb-name">Alex</strong></div>
+  <div class="sb-streak">🔥 <span id="sb-streak">0</span></div>
+</div>
+
+<!-- ONBOARDING -->
+<div class="modal-overlay" id="onboarding">
+  <div class="modal">
+    <div style="font-size:42px;margin-bottom:6px">⚽</div>
+    <h2>Benvenuto Alex</h2>
+    <p>Il tuo coach personale per il raduno di sabato e la trasformazione fisica fino ad agosto. Configurazione in 30 secondi.</p>
+
+    <div style="margin:16px 0">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--mu);margin-bottom:6px">Peso attuale</div>
+      <input type="number" class="inp num" id="ob-weight" placeholder="78.7" step="0.1" value="78.7">
+    </div>
+
+    <div style="margin:16px 0">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--mu);margin-bottom:6px">Sync con Apple Health</div>
+      <p style="font-size:11px">Per la sincronia automatica del peso, dopo aver installato la PWA, configura uno Shortcut iOS che leggerà il peso da Salute. Te lo guido nel pannello Impostazioni.</p>
+    </div>
+
+    <button class="btn" onclick="completeOnboarding()">Iniziamo →</button>
+  </div>
+</div>
+
+<!-- INSTALL BANNER -->
+<div id="install-banner" class="install-banner" style="display:none;margin:12px 14px 0;max-width:560px;margin-left:auto;margin-right:auto">
+  <span style="font-size:20px">📱</span>
+  <div style="flex:1;font-size:11px;color:var(--mu)">Installa l'app sul telefono per esperienza ottimale</div>
+  <button onclick="showInstallGuide()">Come</button>
+</div>
+
+<!-- ===== OGGI (default) ===== -->
+<div class="pg active" id="pg-oggi">
+  <div class="ph">
+    <div class="ph-g" id="dt-day">Caricamento...</div>
+    <div class="ph-t">Il tuo <span class="a">piano oggi</span></div>
+  </div>
+
+  <!-- Urgent: Raduno banner if within 14 days -->
+  <div id="raduno-alert"></div>
+
+  <div class="sr">
+    <div class="sp hi"><div class="sv" id="sv-streak">0</div><div class="sl">streak🔥</div></div>
+    <div class="sp"><div class="sv" id="sv-weight">—</div><div class="sl">kg</div></div>
+    <div class="sp red-sp"><div class="sv" id="sv-test-days">—</div><div class="sl">×Test</div></div>
+    <div class="sp ok"><div class="sv" id="sv-aug-weeks">—</div><div class="sl">×Ago</div></div>
+  </div>
+
+  <div class="cmsg" id="coach-msg">Carico il piano del giorno...</div>
+
+  <!-- Quick Actions -->
+  <div class="quick-grid">
+    <button class="qa primary" onclick="navigateTo('checkin')">
+      <div class="qa-i">✅</div>
+      <div class="qa-n">Check-in serale</div>
+      <div class="qa-s">2 min · obbligatorio</div>
+    </button>
+    <button class="qa" onclick="quickLogWeight()">
+      <div class="qa-i">⚖️</div>
+      <div class="qa-n">Logga peso</div>
+      <div class="qa-s">a digiuno</div>
+    </button>
+    <button class="qa" onclick="navigateTo('foto')">
+      <div class="qa-i">📸</div>
+      <div class="qa-n">Foto piatto</div>
+      <div class="qa-s">analisi AI macros</div>
+    </button>
+    <button class="qa" onclick="navigateTo('coach')">
+      <div class="qa-i">🤖</div>
+      <div class="qa-n">Chiedi al Coach</div>
+      <div class="qa-s">consigli AI</div>
+    </button>
+  </div>
+
+  <!-- Today's plan card -->
+  <div class="blk">
+    <div class="bh"><div class="bi" id="today-icon">📋</div><div class="bt" id="today-title">Piano di oggi</div><div class="tag" id="today-tag">—</div></div>
+    <div class="bb" id="today-content"></div>
+  </div>
+
+  <!-- Today's macros -->
+  <div class="blk">
+    <div class="bh"><div class="bi">🥩</div><div class="bt">Macro target oggi</div><div class="tag tg">PRIORITÀ #1</div></div>
+    <div class="bb">
+      <div class="row"><div class="ri">🥩</div><div class="rc"><div class="rt">Proteine</div><div class="rs" id="prot-sub">2.3 g/kg = ~180g · in 3-4 pasti</div></div><div class="rv" id="prot-target" style="color:var(--blue)">~180g</div></div>
+      <div class="row"><div class="ri">🍝</div><div class="rc"><div class="rt">Carboidrati</div><div class="rs">Concentrali pre/post workout</div></div><div class="rv" id="carb-target" style="color:var(--yellow)">~210g</div></div>
+      <div class="row"><div class="ri">🥑</div><div class="rc"><div class="rt">Grassi</div><div class="rs">Min 0.8g/kg per ormoni</div></div><div class="rv" id="fat-target" style="color:var(--purple)">~65g</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== RADUNO ===== -->
+<div class="pg" id="pg-raduno">
+  <div class="ph">
+    <div class="ph-g">CRA Emilia Romagna · AIA FIGC</div>
+    <div class="ph-t">Raduni & <span class="a">Test Ariet</span></div>
+  </div>
+
+  <!-- TEST 1: 9 MAGGIO -->
+  <div class="urgent-banner" id="test1-banner">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
+      <div style="font-size:28px">🏟️</div>
+      <div style="flex:1">
+        <div class="ub-title">TEST 1 · SABATO 9 MAGGIO 2026</div>
+        <div class="ub-sub">Bologna · Impianto Alberto Mario · Ore 09:00<br>Ariet AA: <strong style="color:var(--yellow)">1105m al livello 15.1</strong></div>
+      </div>
+    </div>
+    <div class="countdown" id="cd-test1"></div>
+  </div>
+
+  <!-- TEST 2: AGOSTO -->
+  <div class="blk">
+    <div class="bh"><div class="bi">🎯</div><div class="bt">TEST 2 · Fine Agosto 2026</div><div class="tag tu">TARGET REALE</div></div>
+    <div class="bb">
+      <div class="tip blue"><strong>Il vero test della trasformazione.</strong> Stesso Ariet (1105m / 15.1) ma stavolta con peso ≤72 kg, BF ≤22%, RHR ≤70 bpm. Vuoi superarlo significativamente meglio del primo per dimostrare la promozione.</div>
+      <div class="row"><div class="ri">📅</div><div class="rc"><div class="rt">Data approssimativa</div><div class="rs">Fine agosto 2026 · raduno inizio anno · data esatta da CRA</div></div><div class="rv" id="aug-countdown">~110 gg</div></div>
+      <div class="row"><div class="ri">🎯</div><div class="rc"><div class="rt">Target performance</div><div class="rs">Non solo passare: superare 1400-1500m al livello 17+</div></div><div class="rv" style="color:var(--green)">+30%</div></div>
+      <div class="row"><div class="ri">⚖️</div><div class="rc"><div class="rt">Target peso</div><div class="rs">72 kg @ 22% BF (vs 78.7 / 26.8% oggi)</div></div><div class="rv" style="color:var(--acc)">−6.7 kg</div></div>
+    </div>
+  </div>
+
+  <!-- 5-day protocol -->
+  <div class="blk">
+    <div class="bh"><div class="bi">📅</div><div class="bt">Protocollo 5 giorni al test 1</div><div class="tag ty">SEGUI ESATTO</div></div>
+    <div class="bb" id="protocol-days"></div>
+  </div>
+
+  <!-- Test strategy -->
+  <div class="blk">
+    <div class="bh"><div class="bi">🧠</div><div class="bt">Strategia Ariet</div><div class="tag tg">TATTICA</div></div>
+    <div class="bb">
+      <div class="tip green"><strong>HRmax 202 bpm reale (misurato in partita).</strong> Hai un range cardiaco enorme. Chi parte forte si esaurisce nei livelli alti.</div>
+      <div class="row"><div class="ri">1️⃣</div><div class="rc"><div class="rt">Livelli 1-8: Conservativo</div><div class="rs">BPM ~140-155. Conversazione normale. Conservi glicogeno.</div></div></div>
+      <div class="row"><div class="ri">2️⃣</div><div class="rc"><div class="rt">Livelli 9-12: Concentrazione</div><div class="rs">BPM ~155-175. Inversioni pulite, respiro impegnato.</div></div></div>
+      <div class="row"><div class="ri">3️⃣</div><div class="rc"><div class="rt">Livelli 13-15.1: Tutto</div><div class="rs">BPM >180. 1105m è raggiungibile. Pensa al prossimo shuttle.</div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ZONE CARDIACHE ===== -->
+<div class="pg" id="pg-cardio">
+  <div class="ph">
+    <div class="ph-g">Calcolate sul tuo HRmax reale: 202 bpm</div>
+    <div class="ph-t">Zone <span class="a">cardiache</span></div>
+  </div>
+
+  <div class="blk">
+    <div class="bh"><div class="bi">❤️</div><div class="bt">Zone Karvonen — HRmax 202</div><div class="tag tg">REAL DATA</div></div>
+    <div class="bb" id="zones-content"></div>
+  </div>
+
+  <div class="tip yellow"><strong>⚠️ Vincoli reali:</strong> tapis NordicTrack T9 + iFit (intervalli min 1 min). Velocità target conservative: max 14 km/h fino a luglio. Riscaldamento sempre 5+ min progressivo.</div>
+
+  <!-- HIIT Schema A -->
+  <div class="blk">
+    <div class="bh"><div class="bi">🔥</div><div class="bt">HIIT "Piramide 1×1" — 25 min</div><div class="tag th">PRINCIPALE</div></div>
+    <div class="bb">
+      <div class="tip orange"><strong>Quando:</strong> 1×/settimana (mer). Pendenza 1-2%. Mai consecutive.</div>
+      <div class="row"><div class="ri">🟢</div><div class="rc"><div class="rt">Riscaldamento 5 min progressivo</div><div class="rs">4 → 5 → 6 → 7 → 8 km/h (1 min ognuno)</div></div><div class="rv">5 min</div></div>
+      <div class="row"><div class="ri">1️⃣</div><div class="rc"><div class="rt">1 min @ 11 km/h</div><div class="rs">Recupero 1 min @ 6 km/h</div></div><div class="rv">2 min</div></div>
+      <div class="row"><div class="ri">2️⃣</div><div class="rc"><div class="rt">1 min @ 12 km/h</div><div class="rs">Recupero 1 min @ 6 km/h</div></div><div class="rv">2 min</div></div>
+      <div class="row"><div class="ri">3️⃣</div><div class="rc"><div class="rt">1 min @ 13 km/h</div><div class="rs">Recupero 1 min @ 6 km/h</div></div><div class="rv">2 min</div></div>
+      <div class="row"><div class="ri">⭐</div><div class="rc"><div class="rt">1 min @ 14 km/h ← picco</div><div class="rs">Recupero 1 min @ 6 km/h</div></div><div class="rv" style="color:var(--red)">2 min</div></div>
+      <div class="row"><div class="ri">3️⃣</div><div class="rc"><div class="rt">1 min @ 13 km/h</div><div class="rs">Recupero 1 min @ 6 km/h</div></div><div class="rv">2 min</div></div>
+      <div class="row"><div class="ri">2️⃣</div><div class="rc"><div class="rt">1 min @ 12 km/h</div><div class="rs">Recupero 1 min @ 6 km/h</div></div><div class="rv">2 min</div></div>
+      <div class="row"><div class="ri">1️⃣</div><div class="rc"><div class="rt">1 min @ 11 km/h</div><div class="rs">Recupero 1 min @ 6 km/h</div></div><div class="rv">2 min</div></div>
+      <div class="row"><div class="ri">🔵</div><div class="rc"><div class="rt">Cool-down 5 min progressivo</div><div class="rs">8 → 7 → 6 → 5 → 4 km/h</div></div><div class="rv">5 min</div></div>
+    </div>
+  </div>
+
+  <!-- HIIT Schema B - Cammino-corsa (per stinchi) -->
+  <div class="blk">
+    <div class="bh"><div class="bi">🦵</div><div class="bt">"Cammino-corsa" — 26 min</div><div class="tag ty">SE STINCHI SENSIBILI</div></div>
+    <div class="bb">
+      <div class="tip yellow"><strong>Usa questa</strong> se hai avuto fastidio tibia recentemente o se sei nuovo alla corsa intensa. Stress ridotto, progressione comunque presente.</div>
+      <div class="row"><div class="ri">🟢</div><div class="rc"><div class="rt">Riscaldamento 8 min</div><div class="rs">4 → 5 → 6 → 7 km/h (2 min ognuno)</div></div><div class="rv">8 min</div></div>
+      <div class="row"><div class="ri">1️⃣</div><div class="rc"><div class="rt">1 min jog 9 km/h + 2 min cammino 6 km/h</div><div class="rs">×5 round</div></div><div class="rv">15 min</div></div>
+      <div class="row"><div class="ri">🔵</div><div class="rc"><div class="rt">Cool-down 3 min</div><div class="rs">5 → 4 km/h</div></div><div class="rv">3 min</div></div>
+    </div>
+  </div>
+
+  <!-- Z2 Standard -->
+  <div class="blk">
+    <div class="bh"><div class="bi">🌳</div><div class="bt">Z2 LISS — Sessione lunga</div><div class="tag tu">2-3×/SETT</div></div>
+    <div class="bb">
+      <div class="tip blue"><strong>Base aerobica.</strong> Pendenza 1-2% (riduce stress tibia, simula outdoor). BPM target 155-167.</div>
+      <div class="row"><div class="ri">🟢</div><div class="rc"><div class="rt">Riscaldamento</div><div class="rs">5 min progressivo 4 → 8 km/h</div></div><div class="rv">5 min</div></div>
+      <div class="row"><div class="ri">▶️</div><div class="rc"><div class="rt">Blocco principale</div><div class="rs">30-45 min @ 8.5-9.5 km/h · pendenza 1-2%</div></div><div class="rv" style="color:var(--blue)">155-167</div></div>
+      <div class="row"><div class="ri">🔵</div><div class="rc"><div class="rt">Cool-down</div><div class="rs">5 min progressivo 8 → 4 km/h</div></div><div class="rv">5 min</div></div>
+      <div class="row"><div class="ri">💡</div><div class="rc"><div class="rt">Alternativa stinchi</div><div class="rs">Cammino veloce 6.5 km/h pendenza 6-8% = stesso BPM, zero impatto</div></div></div>
+    </div>
+  </div>
+
+  <!-- Settimana cardio -->
+  <div class="blk">
+    <div class="bh"><div class="bi">📅</div><div class="bt">Schema settimanale base</div><div class="tag tu">SENZA EVENTI EXTRA</div></div>
+    <div class="bb">
+      <div class="tip blue"><strong>Regola 80/20:</strong> 80% volume in Z2, 20% in HIIT. Vedi `docs/TRAINING_WEEKLY.md` per gestione partite/bici/padel.</div>
+      <div class="row"><div class="ri">LUN</div><div class="rc"><div class="rt">🏋️ Pesi MF</div><div class="rs">Sessione MacroFactor Workout</div></div></div>
+      <div class="row"><div class="ri">MAR</div><div class="rc"><div class="rt">🌳 Z2 35 min</div><div class="rs">Recupero attivo da pesi</div></div></div>
+      <div class="row"><div class="ri">MER</div><div class="rc"><div class="rt">🔥 HIIT 25 min</div><div class="rs">Schema "Piramide 1×1" sopra</div></div></div>
+      <div class="row"><div class="ri">GIO</div><div class="rc"><div class="rt">🏋️ Pesi MF</div><div class="rs">Seconda sessione MF</div></div></div>
+      <div class="row"><div class="ri">VEN</div><div class="rc"><div class="rt">🌳 Z2 lungo 45 min</div><div class="rs">Sessione più lunga della settimana</div></div></div>
+      <div class="row"><div class="ri">SAB</div><div class="rc"><div class="rt">😴 Riposo o Z2 30 min</div><div class="rs">Pre-partita se domenica</div></div></div>
+      <div class="row"><div class="ri">DOM</div><div class="rc"><div class="rt">⚽ Partita o Z2 lungo</div><div class="rs">Partita = vale 2 HIIT</div></div></div>
+    </div>
+  </div>
+
+  <!-- Safety -->
+  <div class="blk">
+    <div class="bh"><div class="bi">⚠️</div><div class="bt">Red flags — STOP subito</div><div class="tag tr2">SICUREZZA</div></div>
+    <div class="bb">
+      <div class="row"><div class="ri">🦵</div><div class="rc"><div class="rt">Dolore tibia/stinchi</div><div class="rs">STOP. Cammino 5 min. Ghiaccio 15 min. Recovery 24-72h.</div></div></div>
+      <div class="row"><div class="ri">😵</div><div class="rc"><div class="rt">Capogiri / vista offuscata</div><div class="rs">Probabile glicemia bassa. STOP. Cibo + acqua.</div></div></div>
+      <div class="row"><div class="ri">❤️</div><div class="rc"><div class="rt">BPM &gt;195 sostenuto</div><div class="rs">Riduci velocità subito. HRmax 202.</div></div></div>
+      <div class="row"><div class="ri">🫁</div><div class="rc"><div class="rt">Respiro corto + petto</div><div class="rs">STOP immediato. Idratati. Riposa.</div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DIETA ===== -->
+<div class="pg" id="pg-dieta">
+  <div class="ph">
+    <div class="ph-g">Zero conteggio · Sistema semaforo</div>
+    <div class="ph-t">Dieta <span class="a">senza pensarci</span></div>
+  </div>
+
+  <div class="tip orange"><strong>3 regole · nient'altro:</strong> proteina ad ogni pasto, metà piatto verdure, cena leggera nei carbs. Funziona uguale al conteggio (Lowe 2014).</div>
+
+  <!-- Traffic light -->
+  <div class="blk">
+    <div class="bh"><div class="bi">🚦</div><div class="bt">Sistema Semaforo</div><div class="tag tg">Quick Ref</div></div>
+    <div class="bb">
+      <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:8px">🟢 VERDE — Quanto vuoi</div>
+      <div style="font-size:12px;color:var(--mu);line-height:1.7;margin-bottom:10px">Verdure · pollo · pesce · tonno · uova · bresaola · ricotta · yogurt greco</div>
+      <div style="font-size:11px;font-weight:700;color:var(--yellow);margin-bottom:8px">🟡 GIALLO — Porzione normale</div>
+      <div style="font-size:12px;color:var(--mu);line-height:1.7;margin-bottom:10px">Pasta/riso (solo pranzo o pre-WO) · frutta · banane · patate · formaggi magri</div>
+      <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:8px">🔴 ROSSO — Limita</div>
+      <div style="font-size:12px;color:var(--mu);line-height:1.7">Pizza/fast food (max 1×/sett) · alcolici (max 2 sere) · dolci · fritti</div>
+    </div>
+  </div>
+
+  <!-- AI photo analysis -->
+  <div class="blk">
+    <div class="bh"><div class="bi">📸</div><div class="bt">Foto piatto → Macros</div><div class="tag tc" id="vision-cap-tag">€<span id="vision-spent">0.0</span>/<span id="vision-cap">5.0</span></div></div>
+    <div class="bb">
+      <div class="photo-zone" id="photo-zone" onclick="document.getElementById('photo-input').click()">
+        <div class="photo-icon">📷</div>
+        <div class="photo-text"><strong style="color:var(--text)">Tap per caricare foto</strong><br>Claude Vision analizza i macro</div>
+        <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" onchange="analyzePhoto(this)">
+      </div>
+      <div class="ld" id="photo-ld"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>Analizzo...</span></div>
+      <div id="photo-result"></div>
+    </div>
+  </div>
+
+  <!-- 5 Pasti veloci -->
+  <div class="blk">
+    <div class="bh"><div class="bi">🍽️</div><div class="bt">5 pranzi veloci che fanno i macros</div><div class="tag ty">RUOTA</div></div>
+    <div class="bb">
+      <div class="row"><div class="ri">🍝</div><div class="rc"><div class="rt">Pasta al tonno</div><div class="rs">120g pasta · 2 latte tonno · pomodorini · olio</div></div><div class="rv" style="color:var(--blue)">55g P</div></div>
+      <div class="row"><div class="ri">🍳</div><div class="rc"><div class="rt">Riso + 3 uova + zucchine</div><div class="rs">90g riso · 3 uova · zucchine</div></div><div class="rv" style="color:var(--blue)">48g P</div></div>
+      <div class="row"><div class="ri">🥗</div><div class="rc"><div class="rt">Insalata bomber</div><div class="rs">250g pollo · misti · 60g pane integrale</div></div><div class="rv" style="color:var(--blue)">60g P</div></div>
+      <div class="row"><div class="ri">🐟</div><div class="rc"><div class="rt">Pasta salmone-asparagi</div><div class="rs">110g pasta · 150g salmone · asparagi (maggio!)</div></div><div class="rv" style="color:var(--blue)">52g P</div></div>
+      <div class="row"><div class="ri">🥩</div><div class="rc"><div class="rt">Bistecca + patate</div><div class="rs">250g scottona · 200g patate forno</div></div><div class="rv" style="color:var(--blue)">58g P</div></div>
+    </div>
+  </div>
+
+  <!-- AI meal planner -->
+  <div class="blk">
+    <div class="bh"><div class="bi">🤖</div><div class="bt">Cosa mangio oggi?</div><div class="tag tc">AI</div></div>
+    <div class="bb">
+      <textarea class="inp" id="meal-ctx" placeholder="Cosa hai? Con chi mangi? Esci stasera con Chiara?" style="min-height:60px;margin-bottom:8px"></textarea>
+      <button class="btn" onclick="genMeal()">Dimmi cosa mangiare →</button>
+      <div class="ld" id="meal-ld"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>Cucino il piano...</span></div>
+      <div id="meal-res"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== COACH AI ===== -->
+<div class="pg" id="pg-coach">
+  <div class="ph">
+    <div class="ph-g">Tutto il context su di te · risposte personalizzate</div>
+    <div class="ph-t"><span class="a">Coach AI</span> personale</div>
+  </div>
+
+  <div class="blk">
+    <div class="bh"><div class="bi">💬</div><div class="bt">Chiedi qualsiasi cosa</div><div class="tag tc" id="coach-cap-tag">€<span id="coach-spent">0.0</span>/<span id="coach-cap-val">∞</span></div></div>
+    <div class="bb">
+      <textarea class="inp" id="coach-q" placeholder="Es: 'mi sento stanco, devo allenarmi?' · 'cosa cambia se la partita di domenica salta?' · 'come posso recuperare meglio dopo la partita?'" style="min-height:80px;margin-bottom:8px"></textarea>
+      <button class="btn" onclick="askCoach()">Chiedi al Coach →</button>
+      <div class="ld" id="coach-ld"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>Sto pensando...</span></div>
+      <div id="coach-res"></div>
+    </div>
+  </div>
+
+  <div class="blk">
+    <div class="bh"><div class="bi">📚</div><div class="bt">Storia conversazioni</div></div>
+    <div class="bb" id="coach-history">
+      <div style="font-size:12px;color:var(--mu)">Le tue conversazioni appariranno qui.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CHECK-IN ===== -->
+<div class="pg" id="pg-checkin">
+  <div class="ph">
+    <div class="ph-g">Sera · 2 minuti · Ogni giorno</div>
+    <div class="ph-t">Check-in <span class="a">rapido</span></div>
+  </div>
+
+  <div class="ci-lbl">⚡ ENERGIA</div>
+  <div class="ci-row">
+    <div class="cib e1" onclick="ciS('energy',1,this)"><span class="bg">💀</span>Morto</div>
+    <div class="cib e2" onclick="ciS('energy',2,this)"><span class="bg">😫</span>Stanco</div>
+    <div class="cib e3" onclick="ciS('energy',3,this)"><span class="bg">😐</span>Ok</div>
+    <div class="cib e4" onclick="ciS('energy',4,this)"><span class="bg">😄</span>Bene</div>
+    <div class="cib e5" onclick="ciS('energy',5,this)"><span class="bg">🔥</span>Carico</div>
+  </div>
+
+  <div class="ci-lbl">😴 SONNO</div>
+  <div class="ci-row">
+    <div class="cib" onclick="ciS('sleep','<6',this)"><span class="bg">😵</span>&lt;6h</div>
+    <div class="cib" onclick="ciS('sleep','6-7',this)"><span class="bg">😴</span>6-7h</div>
+    <div class="cib" onclick="ciS('sleep','7-8',this)"><span class="bg">😊</span>7-8h</div>
+    <div class="cib" onclick="ciS('sleep','>8',this)"><span class="bg">🤩</span>&gt;8h</div>
+  </div>
+
+  <div class="ci-lbl">💪 ALLENAMENTO</div>
+  <div class="ci-row">
+    <div class="cib" id="cw-gym" onclick="ciW('gym')"><span class="bg">🏋️</span>Pesi</div>
+    <div class="cib" id="cw-hiit" onclick="ciW('hiit')"><span class="bg">🔥</span>HIIT</div>
+    <div class="cib" id="cw-z2" onclick="ciW('z2')"><span class="bg">🌳</span>Zona 2</div>
+    <div class="cib" id="cw-match" onclick="ciW('match')"><span class="bg">⚽</span>Partita</div>
+    <div class="cib" id="cw-rest" onclick="ciW('rest')"><span class="bg">😴</span>Riposo</div>
+  </div>
+
+  <div class="ci-lbl">⚖️ PESO (a digiuno)</div>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+    <input type="number" class="inp num" id="ci-w" placeholder="78.7" step="0.1" style="flex:1">
+    <span style="font-size:14px;color:var(--mu);font-weight:600">kg</span>
+  </div>
+
+  <div class="ci-lbl">🍝 COSA HAI MANGIATO?</div>
+  <textarea class="inp" id="ci-f" placeholder="Anche solo parole chiave: 'pasta tonno, bistecca, gelato'" style="min-height:55px;margin-bottom:10px"></textarea>
+
+  <div class="ci-lbl">💬 NOTE (Chiara, studio, sensazioni)</div>
+  <textarea class="inp" id="ci-n" placeholder="Tutto quello che vuoi dirmi" style="min-height:50px;margin-bottom:12px"></textarea>
+
+  <button class="btn" onclick="submitCheckin()">Salva check-in →</button>
+  <div id="ci-fb" style="margin-top:11px;display:none"></div>
+</div>
+
+<!-- ===== FOTO PROGRESS ===== -->
+<div class="pg" id="pg-foto">
+  <div class="ph">
+    <div class="ph-g">Lunedì mattina · A digiuno · Sempre stessa luce</div>
+    <div class="ph-t">Foto <span class="a">progresso</span></div>
+  </div>
+
+  <div class="tip blue"><strong>Reminder settimanale:</strong> ogni lunedì mattina, foto frontale + laterale a digiuno con stessa luce. Confronto sliders settimanali per vedere il vero progresso (la bilancia mente, la foto no).</div>
+
+  <div class="blk">
+    <div class="bh"><div class="bi">📸</div><div class="bt">Carica foto di questa settimana</div></div>
+    <div class="bb">
+      <div class="photo-zone" onclick="document.getElementById('progress-photo').click()">
+        <div class="photo-icon">📷</div>
+        <div class="photo-text"><strong style="color:var(--text)">Foto frontale</strong><br>A digiuno, stessa luce, posa rilassata</div>
+        <input type="file" id="progress-photo" accept="image/*" capture="user" style="display:none" onchange="saveProgressPhoto(this)">
+      </div>
+    </div>
+  </div>
+
+  <div class="blk" id="photo-history-blk">
+    <div class="bh"><div class="bi">📅</div><div class="bt">Storia foto settimanali</div></div>
+    <div class="bb" id="photo-history">
+      <div style="font-size:12px;color:var(--mu)">Le foto appariranno qui ordinate per settimana.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ALLENAMENTI / WORKOUT LOG ===== -->
+<div class="pg" id="pg-workouts">
+  <div class="ph">
+    <div class="ph-g">Tutti i tuoi allenamenti · Log + analisi</div>
+    <div class="ph-t"><span class="a">Allenamenti</span> & eventi</div>
+  </div>
+
+  <!-- Carico settimana -->
+  <div class="sr">
+    <div class="sp"><div class="sv" id="ws-count">0</div><div class="sl">questa sett</div></div>
+    <div class="sp"><div class="sv" id="ws-min">0</div><div class="sl">min totali</div></div>
+    <div class="sp"><div class="sv" id="ws-rpe">—</div><div class="sl">RPE medio</div></div>
+    <div class="sp" id="ws-load-pill"><div class="sv" id="ws-load">—</div><div class="sl">carico</div></div>
+  </div>
+
+  <!-- Aggiungi allenamento -->
+  <div class="quick-grid">
+    <button class="qa primary" onclick="openWorkoutForm()">
+      <div class="qa-i">➕</div>
+      <div class="qa-n">Logga allenamento</div>
+      <div class="qa-s">Sessione appena fatta</div>
+    </button>
+    <button class="qa" onclick="openEventForm()">
+      <div class="qa-i">📅</div>
+      <div class="qa-n">Aggiungi evento</div>
+      <div class="qa-s">Partita / bici / padel</div>
+    </button>
+  </div>
+
+  <!-- Tip iFit -->
+  <div class="tip yellow"><strong>Tip Apple Watch:</strong> dopo l'allenamento, crea uno Shortcut "Sync ultimo workout" che ti porta qui con i dati pre-compilati. Vedi guida in Setup.</div>
+
+  <!-- Lista workout -->
+  <div class="blk">
+    <div class="bh"><div class="bi">📋</div><div class="bt">Storico allenamenti</div><div class="tag tu" id="workouts-count-tag">0</div></div>
+    <div class="bb" id="workouts-list">
+      <div style="font-size:12px;color:var(--mu);text-align:center;padding:14px">
+        Nessun allenamento loggato.<br>Tap "Logga allenamento" sopra per iniziare.
+      </div>
+    </div>
+  </div>
+
+  <!-- Eventi futuri -->
+  <div class="blk">
+    <div class="bh"><div class="bi">🗓️</div><div class="bt">Prossimi eventi</div></div>
+    <div class="bb" id="events-list">
+      <div style="font-size:12px;color:var(--mu);text-align:center;padding:14px">
+        Nessun evento programmato.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WORKOUT FORM MODAL -->
+<div class="modal-overlay" id="workout-modal">
+  <div class="modal">
+    <h2>💪 Nuovo allenamento</h2>
+
+    <div class="ci-lbl">TIPO</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:12px" id="wo-type-grid"></div>
+
+    <div class="ci-lbl">DURATA (min)</div>
+    <input type="number" class="inp num" id="wo-duration" placeholder="30" style="margin-bottom:12px">
+
+    <div class="ci-lbl">INTENSITÀ</div>
+    <div class="ci-row" id="wo-intensity-row">
+      <div class="cib" data-int="light" onclick="selectInt('light',this)"><span class="bg">🟢</span>Light</div>
+      <div class="cib" data-int="moderate" onclick="selectInt('moderate',this)"><span class="bg">🟡</span>Mod</div>
+      <div class="cib" data-int="heavy" onclick="selectInt('heavy',this)"><span class="bg">🟠</span>Heavy</div>
+      <div class="cib" data-int="max" onclick="selectInt('max',this)"><span class="bg">🔴</span>Max</div>
+    </div>
+
+    <div class="ci-lbl">RPE (1-10)</div>
+    <input type="number" class="inp num" id="wo-rpe" placeholder="7" min="1" max="10" style="margin-bottom:12px">
+
+    <details style="margin-bottom:12px">
+      <summary style="font-size:11px;color:var(--mu);cursor:pointer;padding:6px 0">▼ Dati opzionali (Apple Watch)</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+        <input type="number" class="inp" id="wo-distance" placeholder="km" step="0.01">
+        <input type="number" class="inp" id="wo-hr-avg" placeholder="BPM avg">
+        <input type="number" class="inp" id="wo-hr-max" placeholder="BPM max">
+        <input type="number" class="inp" id="wo-kcal" placeholder="kcal">
+      </div>
+    </details>
+
+    <div class="ci-lbl">DOLORE / FASTIDI?</div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px" id="wo-pain-row">
+      <div class="opt" onclick="togglePain('tibia',this)">🦵 Tibia</div>
+      <div class="opt" onclick="togglePain('ginocchio',this)">🦴 Ginocchio</div>
+      <div class="opt" onclick="togglePain('caviglia',this)">👣 Caviglia</div>
+      <div class="opt" onclick="togglePain('schiena',this)">🦴 Schiena</div>
+      <div class="opt" onclick="togglePain('spalla',this)">💪 Spalla</div>
+    </div>
+
+    <div class="ci-lbl">NOTE</div>
+    <textarea class="inp" id="wo-notes" placeholder="Sensazioni, problemi, riflessioni..." style="min-height:50px;margin-bottom:14px"></textarea>
+
+    <div style="display:flex;gap:8px">
+      <button class="btn-s" onclick="closeWorkoutForm()" style="flex:1">Annulla</button>
+      <button class="btn" onclick="saveWorkout()" style="flex:2">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- EVENT FORM MODAL -->
+<div class="modal-overlay" id="event-modal">
+  <div class="modal">
+    <h2>📅 Nuovo evento</h2>
+    <p>Partite, raduni, bici, padel — eventi che modificano il piano della settimana.</p>
+
+    <div class="ci-lbl">TIPO</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:12px" id="ev-type-grid"></div>
+
+    <div class="ci-lbl">DATA</div>
+    <input type="date" class="inp" id="ev-date" style="margin-bottom:12px">
+
+    <div class="ci-lbl">ORA (opzionale)</div>
+    <input type="time" class="inp" id="ev-time" style="margin-bottom:12px">
+
+    <div class="ci-lbl">INTENSITÀ ATTESA</div>
+    <div class="ci-row">
+      <div class="cib" data-int="light" onclick="selectEvInt('light',this)"><span class="bg">🟢</span>Light</div>
+      <div class="cib" data-int="moderate" onclick="selectEvInt('moderate',this)"><span class="bg">🟡</span>Mod</div>
+      <div class="cib" data-int="heavy" onclick="selectEvInt('heavy',this)"><span class="bg">🟠</span>Heavy</div>
+    </div>
+
+    <div class="ci-lbl">NOTE (sede, dettagli)</div>
+    <textarea class="inp" id="ev-notes" placeholder="Es: partita Eccellenza, sede, ecc." style="min-height:50px;margin-bottom:14px"></textarea>
+
+    <div style="display:flex;gap:8px">
+      <button class="btn-s" onclick="closeEventForm()" style="flex:1">Annulla</button>
+      <button class="btn" onclick="saveEvent()" style="flex:2">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== FORMA ===== -->
+<div class="pg" id="pg-prog">
+  <div class="ph">
+    <div class="ph-g">Trasformazione fino ad agosto</div>
+    <div class="ph-t">I tuoi <span class="a">progressi</span></div>
+  </div>
+
+  <div class="pblk" style="text-align:center;background:linear-gradient(135deg,rgba(255,95,31,.05),rgba(61,168,255,.03));border-color:rgba(255,95,31,.18)">
+    <div class="plbl">STREAK 🔥</div>
+    <div class="streak-big" id="big-streak">0</div>
+    <div style="font-size:11px;color:var(--mu)">giorni di check-in consecutivi</div>
+  </div>
+
+  <!-- Weight chart -->
+  <div class="blk">
+    <div class="bh"><div class="bi">📉</div><div class="bt">Trend peso (Apple Health)</div><div class="tag tg">REAL</div></div>
+    <div class="bb">
+      <div class="chart-area">
+        <canvas id="weightChart"></canvas>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mu);margin-top:4px">
+        <span id="chart-start">25 Mar</span>
+        <span id="chart-end">Oggi</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Statistics -->
+  <div class="blk">
+    <div class="bh"><div class="bi">📊</div><div class="bt">Statistiche miglioramento</div><div class="tag tu">DOVE MIGLIORI</div></div>
+    <div class="bb" id="stats-content"></div>
+  </div>
+
+  <!-- Body composition roadmap -->
+  <div class="pblk">
+    <div class="plbl">🎯 ROADMAP BF%</div>
+    <div id="bf-roadmap"></div>
+  </div>
+
+  <!-- Progress to 70kg -->
+  <div class="pblk">
+    <div class="plbl">⚖️ PESO → 70KG</div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+      <span>Inizio: <strong id="start-weight">79.7</strong>kg</span>
+      <span>Target: <strong style="color:var(--green)">70</strong>kg</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+      <span>Ora: <strong style="color:var(--acc)" id="curr-weight">78.7</strong>kg</span>
+      <span>Perso: <strong style="color:var(--green)" id="lost-kg">−1.0</strong>kg</span>
+    </div>
+    <div class="pbar-w"><div class="pbar" id="weight-bar" style="background:linear-gradient(90deg,var(--acc),var(--green));width:10%"></div></div>
+  </div>
+
+  <!-- Sessions this week -->
+  <div class="pblk">
+    <div class="plbl">💪 SESSIONI SETTIMANA</div>
+    <div style="display:flex;gap:6px;margin-bottom:6px" id="session-dots"></div>
+    <div style="font-size:11px;color:var(--mu)">Target: 5-7/sett · Settimana raduno: 2-3</div>
+  </div>
+
+  <!-- Recent check-ins -->
+  <div class="pblk">
+    <div class="plbl">📋 ULTIMI CHECK-IN</div>
+    <div id="checkin-history"></div>
+  </div>
+</div>
+
+<!-- ===== IMPOSTAZIONI ===== -->
+<div class="pg" id="pg-settings">
+  <div class="ph">
+    <div class="ph-g">Configurazione · Sync · API</div>
+    <div class="ph-t"><span class="a">Impostazioni</span></div>
+  </div>
+
+  <!-- Profile -->
+  <div class="blk">
+    <div class="bh"><div class="bi">👤</div><div class="bt">Profilo</div></div>
+    <div class="bb">
+      <div class="settings-row">
+        <div class="settings-icon">⚖️</div>
+        <div class="settings-content">
+          <div class="settings-name">Peso attuale</div>
+          <div class="settings-desc">Sync via Shortcut iOS</div>
+        </div>
+        <input type="number" class="inp" id="set-weight" step="0.1" value="78.7" style="width:70px;text-align:center">
+      </div>
+      <div class="settings-row">
+        <div class="settings-icon">🎂</div>
+        <div class="settings-content">
+          <div class="settings-name">Età</div>
+          <div class="settings-desc">Per calcolo HRmax (Tanaka)</div>
+        </div>
+        <input type="number" class="inp" id="set-age" value="25" style="width:60px;text-align:center">
+      </div>
+      <div class="settings-row">
+        <div class="settings-icon">❤️</div>
+        <div class="settings-content">
+          <div class="settings-name">HRmax reale</div>
+          <div class="settings-desc">Misurato in partita 3 maggio</div>
+        </div>
+        <input type="number" class="inp" id="set-hrmax" value="202" style="width:60px;text-align:center">
+      </div>
+      <div class="settings-row">
+        <div class="settings-icon">🎯</div>
+        <div class="settings-content">
+          <div class="settings-name">Target peso</div>
+          <div class="settings-desc">Per agosto 2026</div>
+        </div>
+        <input type="number" class="inp" id="set-target" step="0.5" value="70" style="width:60px;text-align:center">
+      </div>
+    </div>
+  </div>
+
+  <!-- API Settings -->
+  <div class="blk">
+    <div class="bh"><div class="bi">🔑</div><div class="bt">API Anthropic Claude</div><div class="tag ty">SETUP</div></div>
+    <div class="bb">
+      <div class="tip orange"><strong>Setup:</strong> serve la tua API key Anthropic per il Coach AI e l'analisi foto piatto. Vai su console.anthropic.com → API Keys → Create. Costo stimato: €1-5/mese.</div>
+      <div class="settings-row">
+        <div class="settings-icon">🔐</div>
+        <div class="settings-content">
+          <div class="settings-name">API Key</div>
+          <div class="settings-desc">Salvata solo sul tuo telefono</div>
+        </div>
+      </div>
+      <input type="password" class="inp" id="api-key" placeholder="sk-ant-api03-..." style="margin-top:6px">
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn-s" onclick="testAPI()" style="flex:1">Testa connessione</button>
+        <button class="btn-s" onclick="saveAPI()" style="flex:1">Salva</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Spending Caps -->
+  <div class="blk">
+    <div class="bh"><div class="bi">💰</div><div class="bt">Cap mensili API</div><div class="tag tg">PROTEZIONE</div></div>
+    <div class="bb">
+      <div class="tip green">Limite mensile per non avere sorprese sul conto. Quando si raggiunge il cap, l'app smette di chiamare l'API fino al mese successivo. Puoi rimuovere il cap.</div>
+      <div class="settings-row">
+        <div class="settings-icon">🤖</div>
+        <div class="settings-content">
+          <div class="settings-name">Coach AI (chat)</div>
+          <div class="settings-desc">€<span id="coach-spent-set">0.00</span> spesi questo mese</div>
+        </div>
+        <input type="number" class="inp" id="cap-coach" value="3" step="0.5" style="width:60px;text-align:center">
+      </div>
+      <div class="settings-row">
+        <div class="settings-icon">📸</div>
+        <div class="settings-content">
+          <div class="settings-name">Foto piatto (Vision)</div>
+          <div class="settings-desc">€<span id="vision-spent-set">0.00</span> spesi questo mese</div>
+        </div>
+        <input type="number" class="inp" id="cap-vision" value="5" step="0.5" style="width:60px;text-align:center">
+      </div>
+      <div style="font-size:11px;color:var(--mu);margin:8px 0 4px">Imposta a <strong>0</strong> per disabilitare il cap (illimitato).</div>
+      <button class="btn-s" onclick="saveCaps()" style="width:100%">Salva limiti</button>
+    </div>
+  </div>
+
+  <!-- iOS Integration -->
+  <div class="blk">
+    <div class="bh"><div class="bi">📱</div><div class="bt">Integrazioni iOS</div><div class="tag tu">SETUP</div></div>
+    <div class="bb">
+      <div class="settings-row">
+        <div class="settings-icon">🏥</div>
+        <div class="settings-content">
+          <div class="settings-name">Sync Apple Health</div>
+          <div class="settings-desc">Auto-import peso, BPM, allenamenti via Shortcut</div>
+        </div>
+        <button class="btn-s" onclick="showHealthGuide()">Guida</button>
+      </div>
+      <div class="settings-row">
+        <div class="settings-icon">🔔</div>
+        <div class="settings-content">
+          <div class="settings-name">Promemoria nativi</div>
+          <div class="settings-desc">Crea reminder iOS per check-in, peso, integratori</div>
+        </div>
+        <button class="btn-s" onclick="setupReminders()">Crea</button>
+      </div>
+      <div class="settings-row">
+        <div class="settings-icon">⚡</div>
+        <div class="settings-content">
+          <div class="settings-name">Apple Shortcut "Quick log"</div>
+          <div class="settings-desc">Voice command "Hey Siri, log peso"</div>
+        </div>
+        <button class="btn-s" onclick="showShortcut()">Mostra</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preferences -->
+  <div class="blk">
+    <div class="bh"><div class="bi">⚙️</div><div class="bt">Preferenze</div></div>
+    <div class="bb">
+      <div class="settings-row">
+        <div class="settings-icon">🌙</div>
+        <div class="settings-content">
+          <div class="settings-name">Tema scuro</div>
+          <div class="settings-desc">Sempre attivo (consigliato)</div>
+        </div>
+        <div class="toggle on" onclick="toggleTheme(this)"></div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-icon">🔔</div>
+        <div class="settings-content">
+          <div class="settings-name">Notifiche</div>
+          <div class="settings-desc">Reminder check-in serale</div>
+        </div>
+        <div class="toggle" id="toggle-notif" onclick="toggleNotifications(this)"></div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-icon">📷</div>
+        <div class="settings-content">
+          <div class="settings-name">Reminder foto progresso</div>
+          <div class="settings-desc">Lunedì 09:00</div>
+        </div>
+        <div class="toggle on" onclick="toggleProgressPhoto(this)"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backup -->
+  <div class="blk">
+    <div class="bh"><div class="bi">💾</div><div class="bt">Backup & Dati</div></div>
+    <div class="bb">
+      <button class="btn-s" onclick="exportData()" style="width:100%;margin-bottom:6px">📤 Esporta tutti i dati (JSON)</button>
+      <button class="btn-s" onclick="importData()" style="width:100%;margin-bottom:6px">📥 Importa backup</button>
+      <button class="btn-s" onclick="clearData()" style="width:100%;color:var(--red);border-color:rgba(255,59,92,.3)">🗑️ Reset completo</button>
+    </div>
+  </div>
+
+  <!-- About -->
+  <div class="blk">
+    <div class="bh"><div class="bi">ℹ️</div><div class="bt">Info</div></div>
+    <div class="bb">
+      <div style="font-size:12px;color:var(--mu);line-height:1.6">
+        <strong style="color:var(--text)">Coach Alex</strong> v1.0 MVP<br>
+        PWA personale · Open source<br>
+        Costruito con 💪 da Claude<br>
+        <br>
+        <strong>Dati locali:</strong> tutto su questo telefono<br>
+        <strong>Sync:</strong> via export/import JSON<br>
+        <strong>API:</strong> diretto ad Anthropic, niente server intermedio<br>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BOTTOM TAB BAR -->
+<nav class="tabbar">
+  <button class="tab active" data-tab="oggi" onclick="navigateTo('oggi')">
+    <span class="ti">📋</span><span>Oggi</span>
+  </button>
+  <button class="tab urgent" data-tab="raduno" onclick="navigateTo('raduno')">
+    <span class="ti">🚨</span><span>Test</span>
+  </button>
+  <button class="tab" data-tab="workouts" onclick="navigateTo('workouts')">
+    <span class="ti">💪</span><span>Allena</span>
+  </button>
+  <button class="tab" data-tab="cardio" onclick="navigateTo('cardio')">
+    <span class="ti">❤️</span><span>Cardio</span>
+  </button>
+  <button class="tab" data-tab="dieta" onclick="navigateTo('dieta')">
+    <span class="ti">🍝</span><span>Dieta</span>
+  </button>
+  <button class="tab" data-tab="prog" onclick="navigateTo('prog')">
+    <span class="ti">📈</span><span>Forma</span>
+  </button>
+  <button class="tab" data-tab="settings" onclick="navigateTo('settings')">
+    <span class="ti">⚙️</span><span>Setup</span>
+  </button>
+</nav>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- HEALTH GUIDE MODAL -->
+<div class="modal-overlay" id="health-modal">
+  <div class="modal">
+    <h2>🏥 Sync Apple Health</h2>
+    <p>iOS limita le PWA dall'accesso diretto a HealthKit. Soluzione: Apple Shortcut che legge il peso da Salute e lo salva nell'app.</p>
+
+    <div style="background:var(--s2);border-radius:10px;padding:14px;margin-bottom:12px">
+      <strong style="color:var(--text);font-size:13px">Setup (5 minuti, solo prima volta):</strong>
+      <ol style="font-size:12px;color:var(--mu);line-height:1.8;padding-left:18px;margin-top:8px">
+        <li>Apri app <strong>Comandi Rapidi</strong></li>
+        <li>Crea nuovo Shortcut</li>
+        <li>Aggiungi azione <strong>"Trova campioni di salute"</strong></li>
+        <li>Tipo: Massa corporea · Limite: 1 · Ordina per: data più recente</li>
+        <li>Aggiungi azione <strong>"Apri URL"</strong>: <code style="color:var(--acc);font-size:10px">coachalex://weight?value=[Risultato]</code></li>
+        <li>Imposta Automazione: Ogni mattina alle 09:00</li>
+      </ol>
+    </div>
+
+    <p style="font-size:12px">In alternativa: inserisci il peso a mano nel check-in serale. Ci vogliono 5 secondi.</p>
+
+    <button class="btn" onclick="closeModal('health-modal')">Capito</button>
+  </div>
+</div>
+
+<!-- INSTALL GUIDE -->
+<div class="modal-overlay" id="install-modal">
+  <div class="modal">
+    <h2>📲 Installa l'app</h2>
+    <p>iOS / Safari: tocca il pulsante <strong>Condividi</strong> in basso (☐↑) → scorri → <strong>"Aggiungi a Home"</strong>. L'icona appare come una vera app, niente barra Safari.</p>
+    <p>Dopo l'installazione, l'app funziona offline e si comporta come nativa.</p>
+    <button class="btn" onclick="closeModal('install-modal')">Capito</button>
+  </div>
+</div>
+
+<!-- SHORTCUT MODAL -->
+<div class="modal-overlay" id="shortcut-modal">
+  <div class="modal">
+    <h2>⚡ Quick Log Shortcut</h2>
+    <p>Crea uno Shortcut iOS per loggare velocemente con voce:</p>
+    <div style="background:var(--s2);border-radius:10px;padding:14px;margin-bottom:12px">
+      <strong style="color:var(--text);font-size:13px">"Hey Siri, log peso"</strong>
+      <ol style="font-size:12px;color:var(--mu);line-height:1.8;padding-left:18px;margin-top:8px">
+        <li>App Comandi Rapidi → Nuovo</li>
+        <li>"Chiedi input": "Quanto pesi?"</li>
+        <li>"Apri URL": <code style="color:var(--acc);font-size:10px">coachalex://weight?value=[Input]</code></li>
+        <li>Salva come "Log peso"</li>
+        <li>Aggiungi a Siri con frase "log peso"</li>
+      </ol>
+    </div>
+    <button class="btn" onclick="closeModal('shortcut-modal')">Fatto</button>
+  </div>
+</div>
+
+<!-- SCRIPTS -->
+<script src="src/storage.js"></script>
+<script src="src/api.js"></script>
+<script src="src/health.js"></script>
+<script src="src/notifications.js"></script>
+<script src="src/app.js"></script>
+
+<!-- Service Worker registration -->
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      console.log('[SW] Registered:',reg.scope);
+    }).catch(e=>console.log('[SW] Failed:',e));
+  });
+}
+
+// Handle URL scheme (coachalex://...)
+const urlParams=new URLSearchParams(window.location.search);
+if(urlParams.get('weight')){
+  const w=parseFloat(urlParams.get('weight'));
+  if(!isNaN(w))window.addEventListener('load',()=>quickLogWeightValue(w));
+}
+</script>
+</body>
+</html>
