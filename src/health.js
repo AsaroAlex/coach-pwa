@@ -67,34 +67,112 @@ const Health = {
     return null;
   },
 
-  // Generate Shortcut import URLs (deeplinks to iOS Shortcuts)
-  generateWeightShortcut() {
-    // This URL would be a fully constructed iOS Shortcut .shortcut file URL
-    // For MVP: instructions only
+  // Generate Shortcut "ricette" — restituiscono URL già pronti per l'app Comandi Rapidi.
+  // Tutti gli URL usano l'origin reale della PWA (window.location.origin) — non più lo schema custom coachalex://
+  // perché la PWA è raggiungibile solo via HTTPS dopo l'install su Home Screen.
+  generateWeightShortcut(origin) {
     return {
+      id: 'weight-quick',
       name: 'Log peso veloce',
+      icon: '⚖️',
+      description: 'Chiede il peso, lo salva nell\'app via URL. Usabile con "Hey Siri, log peso".',
+      urlTemplate: `${origin}/?action=weight&value=[Numero]`,
       steps: [
         'Apri app Comandi Rapidi',
-        'Crea nuovo Shortcut',
-        'Aggiungi azione "Chiedi numero" → "Quanto pesi?"',
-        'Aggiungi azione "Apri URL" → coachalex://weight?value=[Numero]',
+        'Tap + per nuovo Shortcut',
+        'Aggiungi azione "Chiedi input" → tipo Numero, prompt "Quanto pesi?"',
+        'Aggiungi azione "Apri URL" e incolla l\'URL qui sotto',
+        'Sostituisci [Numero] con la variabile "Risultato Chiedi input" (tap nella casella URL)',
         'Salva come "Log peso"',
       ],
     };
   },
 
-  generateHealthSyncShortcut() {
+  generateHealthSyncShortcut(origin) {
     return {
-      name: 'Sync peso da Salute',
+      id: 'weight-auto',
+      name: 'Sync peso automatico da Salute',
+      icon: '🏥',
+      description: 'Ogni mattina legge l\'ultimo peso da Apple Salute e lo salva in app.',
+      urlTemplate: `${origin}/?action=weight&value=[PesoSalute]`,
+      automation: 'Ogni mattina alle 09:00',
       steps: [
         'Apri Comandi Rapidi',
-        'Crea nuovo Shortcut',
+        'Tap + per nuovo Shortcut',
         'Aggiungi "Trova campioni di salute"',
-        'Configura: Tipo=Massa corporea, Limite=1, Ordina per più recente',
-        'Aggiungi "Apri URL": coachalex://weight?value=[Risultato.peso]',
-        'Salva. Imposta Automazione: ogni mattina alle 09:00',
+        'Configura: Tipo=Massa corporea · Limite=1 · Ordina=Più recente',
+        'Aggiungi azione "Apri URL" e incolla l\'URL qui sotto',
+        'Sostituisci [PesoSalute] con la variabile "Massa corporea" (dal risultato della ricerca)',
+        'Salva come "Sync peso Salute"',
+        'Tab Automazioni → Crea automazione personale → Ora del giorno → 09:00 → Esegui Shortcut',
       ],
     };
+  },
+
+  generateWorkoutSyncShortcut(origin) {
+    return {
+      id: 'workout-sync',
+      name: 'Sync ultimo workout',
+      icon: '💪',
+      description: 'Dopo l\'allenamento Apple Watch: apre il form pre-compilato con tipo/durata/intensità.',
+      urlTemplate: `${origin}/?action=workout&type=hiit&duration_min=25&intensity=heavy&rpe=7`,
+      steps: [
+        'Apri Comandi Rapidi → nuovo Shortcut',
+        'Aggiungi "Trova allenamenti" (Salute) · Limite 1 · Ordina più recente',
+        'Aggiungi "Apri URL" e incolla l\'URL qui sotto',
+        'Sostituisci i parametri con le variabili: type=Tipo allenamento, duration_min=Durata (in min), intensity=heavy/moderate, rpe= valore fisso (es. 7)',
+        'Salva come "Sync ultimo workout"',
+        'Opzionale: Automazione → Quando termina allenamento Apple Watch → esegui Shortcut',
+      ],
+    };
+  },
+
+  generateQuickCheckinShortcut(origin) {
+    return {
+      id: 'checkin-quick',
+      name: 'Quick check-in serale',
+      icon: '🌙',
+      description: 'Reminder ogni sera alle 21:00 che apre direttamente la tab Check-in.',
+      urlTemplate: `${origin}/?action=checkin`,
+      automation: 'Ogni sera alle 21:00',
+      steps: [
+        'Apri Comandi Rapidi → nuovo Shortcut',
+        'Aggiungi azione "Apri URL" e incolla l\'URL qui sotto',
+        'Salva come "Check-in Coach"',
+        'Tab Automazioni → Crea automazione personale → Ora del giorno → 21:00 → Esegui Shortcut',
+        'Disattiva "Chiedi prima di eseguire" per partenza automatica',
+      ],
+    };
+  },
+
+  generateBackupShortcut(origin) {
+    return {
+      id: 'backup-weekly',
+      name: 'Backup iCloud settimanale',
+      icon: '💾',
+      description: 'Ogni domenica apre la PWA e scarica un export JSON che puoi salvare in iCloud Drive.',
+      urlTemplate: `${origin}/?action=export`,
+      automation: 'Ogni domenica alle 22:00',
+      steps: [
+        'Apri Comandi Rapidi → nuovo Shortcut',
+        'Aggiungi azione "Apri URL" e incolla l\'URL qui sotto',
+        'L\'app produrrà automaticamente il file JSON di backup',
+        'Aggiungi (manuale o automatico) "Salva file" → cartella iCloud Drive/Coach Alex Backups',
+        'Salva come "Backup Coach Alex"',
+        'Tab Automazioni → Domenica 22:00 → esegui Shortcut',
+      ],
+    };
+  },
+
+  // Restituisce tutti gli shortcut in ordine di utilità.
+  generateAllShortcuts(origin) {
+    return [
+      this.generateQuickCheckinShortcut(origin),
+      this.generateHealthSyncShortcut(origin),
+      this.generateWorkoutSyncShortcut(origin),
+      this.generateWeightShortcut(origin),
+      this.generateBackupShortcut(origin),
+    ];
   },
 
   // ── IMPORT SCREENSHOTS via Vision ────────────────────────

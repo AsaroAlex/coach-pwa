@@ -12,18 +12,6 @@ Tutti i task in alta priorità sono stati completati il 6 maggio 2026. Vedi sezi
 
 ## 🟡 MEDIA PRIORITÀ (entro fine maggio)
 
-- [ ] **Sezione "Apple Shortcuts" in Setup**
-  - Istruzioni copiabili per:
-    - "Sync peso" (giornaliero da Apple Health)
-    - "Sync ultimo workout" (post-allenamento)
-    - "Backup iCloud" (settimanale)
-    - "Quick check-in" (ora del giorno)
-
-- [ ] **Pattern detection automatico (V1.2)**
-  - Dopo 14 check-in: AI analizza correlazioni
-  - "Hai dolore tibia 80% delle volte dopo HIIT" → suggerisce schema cammino-corsa
-  - Costo: 1 chiamata API/settimana
-
 - [ ] **Database alimenti italiani in Dieta**
   - 50-100 cibi più comuni Coop con macros
   - Tap → aggiunge a check-in pasti
@@ -95,6 +83,12 @@ Tutti i task in alta priorità sono stati completati il 6 maggio 2026. Vedi sezi
 ---
 
 ## ✅ COMPLETATI
+
+### 6 maggio 2026 (V1.3)
+- ✅ Apple Shortcuts hub in Setup: 5 ricette accordion con bottone "Copia URL" (sync peso, sync auto da Salute, sync workout, quick check-in serale, backup iCloud settimanale)
+- ✅ Pattern detection rule-based locale (0€): dolore post-HIIT, energia bassa post-sonno scarso, peso più basso giorno settimana, sovraccarico RPE
+- ✅ Pattern detection AI opzionale (€0.013/call, throttle 1×/settimana = ≤€0.68/anno) con cache risultato in profile
+- ✅ Helper `copyToClipboard()` con fallback Safari < 13.4
 
 ### 6 maggio 2026 (V1.2)
 - ✅ Semaforo autoregolazione completo (sleep/energy/foodLevel/pain) allineato a `docs/AUTOREGULATION.md`

@@ -197,6 +197,32 @@ const WEEKLY_PLAN = {
        actions: ['Recupero attivo'] },
 };
 
+// Helper: copia testo in clipboard con fallback per Safari < 13.4.
+async function copyToClipboard(text, btnEl) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    if (btnEl) {
+      const orig = btnEl.textContent;
+      btnEl.textContent = '✓ Copiato';
+      setTimeout(() => { btnEl.textContent = orig; }, 1500);
+    }
+    showToast('URL copiato in clipboard', 'success');
+  } catch (e) {
+    showToast('Copia fallita: ' + e.message, 'error');
+  }
+}
+
 // Helper: renderizza il piano settimanale 7 giorni evidenziando oggi.
 // Riusato da renderCardio (#cardio-week) e renderWorkouts (#workouts-week).
 function renderWeeklyPlanList(targetElId) {
@@ -768,6 +794,9 @@ async function renderProgress() {
   // Streak
   document.getElementById('big-streak').textContent = computeStreak(checkins);
 
+  // Pattern detection (locale rule-based + AI opzionale)
+  await renderPatternsBlock();
+
   // Stats
   await renderStats(checkins, weights);
 
@@ -827,6 +856,154 @@ async function renderProgress() {
       </div>
     </div>`;
   }).join('') : '<div style="font-size:12px;color:var(--mu)">Nessun check-in ancora.</div>';
+}
+
+// ── PATTERN DETECTION (rule-based + AI opzionale) ───────
+// Costo locale: 0€. Costo AI: ~€0.013 per call, throttled a 1×/settimana = max ~€0.68/anno.
+function detectLocalPatterns(checkins, workouts) {
+  const insights = [];
+
+  // 1) Dolore tibia post-HIIT
+  const hiits = workouts.filter(w => w.type === 'hiit');
+  if (hiits.length >= 3) {
+    const tibiaCount = hiits.filter(w => w.pain?.includes('tibia')).length;
+    const pct = Math.round((tibiaCount / hiits.length) * 100);
+    if (pct >= 30) {
+      insights.push({ icon: '🦵', severity: 'red',
+        text: `Dolore tibia <strong>${pct}%</strong> dei HIIT (${tibiaCount}/${hiits.length}). Considera schema "cammino-corsa" nel tab Cardio.` });
+    }
+  }
+
+  // 2) Energia bassa il giorno dopo sonno <6h
+  const sortedC = [...checkins].sort((a, b) => new Date(a.date) - new Date(b.date));
+  let scarcoTotal = 0, scarcoLowEnergy = 0;
+  for (let i = 0; i < sortedC.length - 1; i++) {
+    if (sortedC[i].sleep === '<6') {
+      scarcoTotal++;
+      const next = sortedC[i + 1];
+      const dayDiff = (new Date(next.date) - new Date(sortedC[i].date)) / 86400000;
+      if (dayDiff <= 1.5 && next.energy <= 2) scarcoLowEnergy++;
+    }
+  }
+  if (scarcoTotal >= 3) {
+    const pct = Math.round((scarcoLowEnergy / scarcoTotal) * 100);
+    if (pct >= 50) {
+      insights.push({ icon: '😴', severity: 'yellow',
+        text: `Sonno &lt;6h porta energia bassa il giorno dopo nel <strong>${pct}%</strong> dei casi. Letto entro le 23:00.` });
+    }
+  }
+
+  // 3) Peso più basso giorno settimana
+  const weighed = checkins.filter(c => c.weight).map(c => ({ w: c.weight, dow: new Date(c.date).getDay() }));
+  if (weighed.length >= 14) {
+    const byDow = {};
+    weighed.forEach(({ w, dow }) => { (byDow[dow] = byDow[dow] || []).push(w); });
+    const eligible = Object.keys(byDow).filter(d => byDow[d].length >= 2);
+    if (eligible.length >= 3) {
+      const avgs = eligible.map(d => ({ dow: +d, avg: byDow[d].reduce((a, b) => a + b, 0) / byDow[d].length }));
+      avgs.sort((a, b) => a.avg - b.avg);
+      const dayNames = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
+      insights.push({ icon: '⚖️', severity: 'green',
+        text: `Peso più basso in media il <strong>${dayNames[avgs[0].dow]}</strong> (${avgs[0].avg.toFixed(1)}kg). Foto progresso allora?` });
+    }
+  }
+
+  // 4) Sovraccarico: workout a distanza ≤36h con RPE ≥7
+  const sortedW = [...workouts].sort((a, b) => new Date(a.date) - new Date(b.date));
+  let consecutivePairs = 0, overloadCount = 0;
+  for (let i = 1; i < sortedW.length; i++) {
+    const hours = (new Date(sortedW[i].date) - new Date(sortedW[i - 1].date)) / 3600000;
+    if (hours <= 36) {
+      consecutivePairs++;
+      if (sortedW[i].rpe >= 7) overloadCount++;
+    }
+  }
+  if (consecutivePairs >= 4) {
+    const pct = Math.round((overloadCount / consecutivePairs) * 100);
+    if (pct >= 50) {
+      insights.push({ icon: '⚡', severity: 'yellow',
+        text: `Quando ti alleni 2 giorni di fila, l'RPE supera 7 nel <strong>${pct}%</strong> dei casi. Spazia di più.` });
+    }
+  }
+
+  return insights;
+}
+
+async function renderPatternsBlock() {
+  const el = document.getElementById('patterns-block');
+  if (!el) return;
+
+  const checkins = await Storage.getCheckins();
+  const workouts = await Storage.getWorkouts();
+
+  if (checkins.length < 14) {
+    el.innerHTML = `<div class="tip blue">Servono almeno <strong>14 check-in</strong> per la pattern detection. Hai <strong>${checkins.length}/14</strong>.</div>`;
+    return;
+  }
+
+  const insights = detectLocalPatterns(checkins, workouts);
+  const sevClass = { red: 'red', yellow: 'yellow', green: 'green' };
+  let html = insights.length === 0
+    ? `<div class="tip green">✓ Nessun pattern critico rilevato. Continua così.</div>`
+    : insights.map(i => `<div class="tip ${sevClass[i.severity]}"><span style="font-size:14px">${i.icon}</span> ${i.text}</div>`).join('');
+
+  // Cached AI result + bottone analisi avanzata throttled (1×/settimana)
+  const profile = appState.profile;
+  const lastDate = profile.lastPatternAnalysis ? new Date(profile.lastPatternAnalysis) : null;
+  const daysSince = lastDate ? Math.floor((Date.now() - lastDate.getTime()) / 86400000) : null;
+  const canRunAI = !lastDate || daysSince >= 7;
+
+  if (profile.lastPatternResult) {
+    html += `<details style="background:var(--s1);border-radius:9px;padding:10px 12px;margin-top:10px">
+      <summary style="cursor:pointer;font-size:12px;font-weight:700">🤖 Ultima analisi AI (${daysSince} gg fa)</summary>
+      <div style="padding-top:10px;font-size:12px;color:var(--mu);line-height:1.6">${md(profile.lastPatternResult)}</div>
+    </details>`;
+  }
+
+  html += `<button class="btn-s" onclick="runAdvancedPatternAnalysis()" style="width:100%;margin-top:10px"${canRunAI ? '' : ' disabled'}>
+    ${canRunAI ? '🤖 Analisi avanzata AI (€0.013)' : `Aspetta ${7 - daysSince} giorni per la prossima analisi AI`}
+  </button>`;
+
+  el.innerHTML = html;
+}
+
+async function runAdvancedPatternAnalysis() {
+  const profile = appState.profile;
+  const lastDate = profile.lastPatternAnalysis ? new Date(profile.lastPatternAnalysis) : null;
+  const daysSince = lastDate ? Math.floor((Date.now() - lastDate.getTime()) / 86400000) : null;
+  if (lastDate && daysSince < 7) {
+    showToast(`Già fatta ${daysSince} gg fa. Aspetta ancora ${7 - daysSince} gg.`, 'error');
+    return;
+  }
+
+  showToast('Sto analizzando…', 'success');
+  const checkins = await Storage.getRecentCheckins(30);
+  const workouts = await Storage.getRecentWorkouts(30);
+
+  const summary = `Ecco i miei ultimi 30 check-in e workout. Analizza pattern, correlazioni e consigli azionabili (max 200 parole, 3-5 bullet bold).
+
+CHECK-IN (${checkins.length}):
+${checkins.map(c => `${new Date(c.date).toLocaleDateString('it-IT')}: energia ${c.energy}/5, sonno ${c.sleep}, foodLevel ${c.foodLevel || '?'}, workout ${c.workout || '-'}, peso ${c.weight || '?'}kg`).join('\n')}
+
+WORKOUTS (${workouts.length}):
+${workouts.map(w => `${new Date(w.date).toLocaleDateString('it-IT')}: ${w.type} ${w.duration_min}min RPE${w.rpe || '?'}${w.pain?.length ? ' DOLORE:' + w.pain.join(',') : ''}`).join('\n')}
+
+Cerca correlazioni dolore-allenamento, sonno-energia, peso-giorno, RPE-frequenza, qualsiasi pattern non ovvio. Niente fluff, solo insight azionabili.`;
+
+  const result = await API.chat(summary);
+
+  if (result.error) {
+    showToast(result.message, 'error');
+    return;
+  }
+
+  appState.profile.lastPatternAnalysis = new Date().toISOString();
+  appState.profile.lastPatternResult = result.text;
+  await Storage.saveProfile(appState.profile);
+  await updateApiUsage();
+
+  showToast(`✓ Analisi AI completata (€${result.cost.toFixed(3)})`, 'success');
+  await renderPatternsBlock();
 }
 
 async function renderStats(checkins, weights) {
@@ -985,6 +1162,39 @@ async function renderSettings() {
   if (Notification.permission === 'granted') {
     document.getElementById('toggle-notif').classList.add('on');
   }
+
+  // Shortcuts hub (5 ricette copiabili)
+  renderShortcutsHub();
+}
+
+// ── APPLE SHORTCUTS HUB ─────────────────────────────────
+function renderShortcutsHub() {
+  const el = document.getElementById('shortcuts-hub');
+  if (!el) return;
+  const origin = window.location.origin;
+  const shortcuts = Health.generateAllShortcuts(origin);
+
+  el.innerHTML = shortcuts.map(s => {
+    const safeUrl = s.urlTemplate.replace(/"/g, '&quot;');
+    const stepsHtml = s.steps.map((st, i) => `<li style="margin-bottom:4px">${st}</li>`).join('');
+    const autoNote = s.automation ? `<div class="tip yellow" style="margin-top:8px"><strong>⏰ Automazione:</strong> ${s.automation}</div>` : '';
+    return `<details style="background:var(--s1);border-radius:9px;padding:10px 12px;margin-bottom:8px">
+      <summary style="cursor:pointer;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;list-style:none">
+        <span style="font-size:18px">${s.icon}</span>
+        <span style="flex:1">${s.name}</span>
+        <span style="font-size:10px;color:var(--mu);font-weight:500">▼</span>
+      </summary>
+      <div style="padding-top:10px">
+        <div style="font-size:12px;color:var(--mu);margin-bottom:10px">${s.description}</div>
+        <ol style="font-size:12px;color:var(--mu);line-height:1.6;padding-left:18px;margin-bottom:10px">${stepsHtml}</ol>
+        <div style="background:var(--s2);border-radius:7px;padding:8px 10px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+          <code style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--acc);flex:1;word-break:break-all">${safeUrl}</code>
+          <button class="btn-s" data-url="${safeUrl}" onclick="copyToClipboard(this.dataset.url,this)" style="flex-shrink:0;font-size:10px;padding:5px 10px">Copia URL</button>
+        </div>
+        ${autoNote}
+      </div>
+    </details>`;
+  }).join('');
 }
 
 async function saveAPI() {

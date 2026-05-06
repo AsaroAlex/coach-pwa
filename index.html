@@ -788,6 +788,12 @@ hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
     <div style="font-size:11px;color:var(--mu)">giorni di check-in consecutivi</div>
   </div>
 
+  <!-- Pattern detection (locale rule-based + AI opzionale) -->
+  <div class="blk">
+    <div class="bh"><div class="bi">🔍</div><div class="bt">Pattern detection</div><div class="tag tu">RULE-BASED + AI</div></div>
+    <div class="bb" id="patterns-block"></div>
+  </div>
+
   <!-- Weight chart -->
   <div class="blk">
     <div class="bh"><div class="bi">📉</div><div class="bt">Trend peso (Apple Health)</div><div class="tag tg">REAL</div></div>
@@ -939,14 +945,6 @@ hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
     <div class="bh"><div class="bi">📱</div><div class="bt">Integrazioni iOS</div><div class="tag tu">SETUP</div></div>
     <div class="bb">
       <div class="settings-row">
-        <div class="settings-icon">🏥</div>
-        <div class="settings-content">
-          <div class="settings-name">Sync Apple Health</div>
-          <div class="settings-desc">Auto-import peso, BPM, allenamenti via Shortcut</div>
-        </div>
-        <button class="btn-s" onclick="showHealthGuide()">Guida</button>
-      </div>
-      <div class="settings-row">
         <div class="settings-icon">📸</div>
         <div class="settings-content">
           <div class="settings-name">Importa screenshot Salute</div>
@@ -964,14 +962,15 @@ hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
         </div>
         <button class="btn-s" onclick="setupReminders()">Crea</button>
       </div>
-      <div class="settings-row">
-        <div class="settings-icon">⚡</div>
-        <div class="settings-content">
-          <div class="settings-name">Apple Shortcut "Quick log"</div>
-          <div class="settings-desc">Voice command "Hey Siri, log peso"</div>
-        </div>
-        <button class="btn-s" onclick="showShortcut()">Mostra</button>
-      </div>
+    </div>
+  </div>
+
+  <!-- Apple Shortcuts pronti (5 ricette copiabili) -->
+  <div class="blk">
+    <div class="bh"><div class="bi">⚡</div><div class="bt">Apple Shortcuts pronti</div><div class="tag tu">5 RICETTE</div></div>
+    <div class="bb">
+      <div class="tip blue">Tap per espandere ogni ricetta. Bottone "Copia URL" mette in clipboard l'URL pronto da incollare in <strong>Comandi Rapidi → Apri URL</strong>.</div>
+      <div id="shortcuts-hub"></div>
     </div>
   </div>
 
