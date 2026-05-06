@@ -92,11 +92,19 @@ body{
 .tab.active{color:var(--acc);}
 .tab.urgent{color:var(--red);}
 .tab.urgent.active{color:var(--red);}
+/* iPhone SE / Mini (≤374px): nasconde le label per evitare overflow */
+@media (max-width: 374px) {
+  .tabbar { padding-left:2px; padding-right:2px; }
+  .tab { padding:6px 1px; font-size:0; }
+  .tab .ti { font-size:22px; }
+  .tab span:not(.ti) { display:none; }
+}
 
 /* Pages */
 .pg{display:none;padding:18px 16px 96px;max-width:560px;margin:0 auto;}
 .pg.active{display:block;animation:fadeIn .3s cubic-bezier(.2,.6,.2,1);}
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+@keyframes spin{to{transform:rotate(360deg);}}
 
 /* Header */
 .ph{margin-bottom:16px;}
@@ -328,7 +336,10 @@ hr{border:none;border-top:1px solid var(--brd-soft);margin:11px 0;}
 <!-- STATUS BAR -->
 <div class="statusbar" id="statusbar">
   <div class="sb-greet"><span id="sb-time">Buongiorno</span> · <strong id="sb-name">Alex</strong></div>
-  <div class="sb-streak">🔥 <span id="sb-streak">0</span></div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <span id="sb-offline" style="display:none;font-size:10px;font-weight:700;color:var(--yellow);background:rgba(255,200,0,.12);border:1px solid rgba(255,200,0,.4);padding:2px 7px;border-radius:5px;letter-spacing:0.02em">OFFLINE</span>
+    <div class="sb-streak">🔥 <span id="sb-streak">0</span></div>
+  </div>
 </div>
 
 <!-- ONBOARDING -->
@@ -1178,6 +1189,7 @@ hr{border:none;border-top:1px solid var(--brd-soft);margin:11px 0;}
     <div class="bh"><div class="bi">💾</div><div class="bt">Backup & Dati</div></div>
     <div class="bb">
       <button class="btn-s" onclick="exportData()" style="width:100%;margin-bottom:6px">📤 Esporta tutti i dati (JSON)</button>
+      <button class="btn-s" onclick="exportCSV()" style="width:100%;margin-bottom:6px">📊 Esporta CSV (weights+workouts+checkins)</button>
       <button class="btn-s" onclick="importData()" style="width:100%;margin-bottom:6px">📥 Importa backup</button>
       <button class="btn-s" onclick="clearData()" style="width:100%;color:var(--red);border-color:rgba(255,59,92,.3)">🗑️ Reset completo</button>
     </div>

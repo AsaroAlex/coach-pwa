@@ -7,6 +7,46 @@ let appState = {
   ciData: {},
 };
 
+// ── OFFLINE INDICATOR ───────────────────────────────────
+function refreshOfflineIndicator() {
+  const el = document.getElementById('sb-offline');
+  if (!el) return;
+  el.style.display = navigator.onLine ? 'none' : 'inline-block';
+}
+window.addEventListener('online', refreshOfflineIndicator);
+window.addEventListener('offline', refreshOfflineIndicator);
+
+// ── CHECK-IN DRAFT (localStorage) ───────────────────────
+const CI_DRAFT_KEY = 'coachAlex_checkinDraft_v1';
+function saveCheckinDraft() {
+  const ids = ['ci-w', 'ci-f', 'ci-n']; // peso, food, note
+  const draft = {};
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el && el.value) draft[id] = el.value;
+  }
+  if (appState.ciData) draft._state = appState.ciData;
+  try { localStorage.setItem(CI_DRAFT_KEY, JSON.stringify(draft)); } catch (_) {}
+}
+function restoreCheckinDraft() {
+  let draft;
+  try { draft = JSON.parse(localStorage.getItem(CI_DRAFT_KEY) || 'null'); } catch (_) { return; }
+  if (!draft) return;
+  for (const k of Object.keys(draft)) {
+    if (k === '_state') {
+      if (draft._state && typeof draft._state === 'object') {
+        appState.ciData = { ...appState.ciData, ...draft._state };
+      }
+      continue;
+    }
+    const el = document.getElementById(k);
+    if (el && draft[k]) el.value = draft[k];
+  }
+}
+function clearCheckinDraft() {
+  try { localStorage.removeItem(CI_DRAFT_KEY); } catch (_) {}
+}
+
 // ── INITIALIZATION ──────────────────────────────────────
 async function init() {
   try {
@@ -32,6 +72,14 @@ async function init() {
 
     // Render initial state
     await renderAll();
+
+    // UX: stato offline + ripristino draft check-in + autosave
+    refreshOfflineIndicator();
+    restoreCheckinDraft();
+    ['ci-w', 'ci-f', 'ci-n'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('input', saveCheckinDraft);
+    });
 
     // Schedule evening check-in if enabled
     if (appState.profile.notifications && Notification.permission === 'granted') {
@@ -505,6 +553,50 @@ function renderWeeklyPlanList(targetElId) {
   }).join('');
 }
 
+// Recap settimana corrente: lun-dom della settimana che sta finendo.
+async function buildWeeklyRecapHtml(now) {
+  const dayMs = 86400000;
+  // Trova il lunedì della settimana corrente
+  const dow = now.getDay() || 7; // dom=7
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - (dow - 1));
+  const weekStart = monday.getTime();
+  const weekEnd = weekStart + 7 * dayMs;
+
+  const workouts = (await Storage.getWorkouts()).filter(w => {
+    const t = new Date(w.date).getTime();
+    return t >= weekStart && t < weekEnd;
+  });
+  const checkins = (await Storage.getCheckins()).filter(c => {
+    const t = new Date(c.date).getTime();
+    return t >= weekStart && t < weekEnd;
+  });
+  const weights = (await Storage.getWeights()).filter(wt => {
+    const t = new Date(wt.date).getTime();
+    return t >= weekStart && t < weekEnd;
+  });
+
+  const totalMin = workouts.reduce((s, w) => s + (w.duration_min || 0), 0);
+  const avgRpe = workouts.length ? (workouts.reduce((s, w) => s + (w.rpe || 0), 0) / workouts.length).toFixed(1) : '—';
+  const sessionLoad = Science.calcSessionLoad(workouts, 7);
+  const sleepHours = checkins.map(c => c.sleep_hours).filter(v => typeof v === 'number');
+  const avgSleep = sleepHours.length ? (sleepHours.reduce((a, b) => a + b, 0) / sleepHours.length).toFixed(1) : '—';
+  const wkg = weights.length >= 2 ? (weights[weights.length - 1].weight - weights[0].weight).toFixed(1) : null;
+
+  return `
+    <div class="blk" style="margin-top:14px">
+      <div class="bh"><div class="bi">📊</div><div class="bt">Recap settimana</div><div class="tag tu">DOM</div></div>
+      <div class="bb">
+        <div class="row"><div class="ri">💪</div><div class="rc"><div class="rt">Allenamenti</div><div class="rs">${totalMin} min totali · RPE medio ${avgRpe}</div></div><div class="rv">${workouts.length}</div></div>
+        <div class="row"><div class="ri">🔥</div><div class="rc"><div class="rt">Carico sRPE</div><div class="rs">${sessionLoad > 2000 ? 'sopra soglia 2000 — domani considera Z2 leggero' : 'in range'}</div></div><div class="rv">${Math.round(sessionLoad)} AU</div></div>
+        <div class="row"><div class="ri">😴</div><div class="rc"><div class="rt">Sonno medio</div><div class="rs">${sleepHours.length} notti tracciate</div></div><div class="rv">${avgSleep}h</div></div>
+        ${wkg !== null ? `<div class="row"><div class="ri">⚖️</div><div class="rc"><div class="rt">Δ peso</div><div class="rs">${weights.length} pesate</div></div><div class="rv" style="color:${parseFloat(wkg) < 0 ? 'var(--green)' : 'var(--yellow)'}">${wkg > 0 ? '+' : ''}${wkg} kg</div></div>` : ''}
+        <div class="row"><div class="ri">📝</div><div class="rc"><div class="rt">Check-in completati</div><div class="rs">target 7/7</div></div><div class="rv">${checkins.length}/7</div></div>
+      </div>
+    </div>`;
+}
+
 // Mappa dow → durata base sessione in minuti.
 // Allineato a WEEKLY_PLAN: LUN/PESI 30, MAR/Z2 35, MER/HIIT 25, GIO/PESI 30, VEN/Z2-lungo 45, SAB 30, DOM 90 partita
 function dowToDuration(dow) {
@@ -739,6 +831,12 @@ async function renderOggi() {
       const days = Math.ceil((d - now) / 86400000);
       return `<div class="row" onclick="navigateTo('workouts')" style="cursor:pointer"><div class="ri">${t?.icon || '📅'}</div><div class="rc"><div class="rt">${t?.label || e.type}</div><div class="rs">tra ${days} gg · ${d.toLocaleDateString('it-IT', { weekday: 'long' })}</div></div></div>`;
     }).join('');
+  }
+
+  // Recap settimanale (domenica sera o quando si apre l'app dopo le 18 di domenica)
+  const dowNow = now.getDay();
+  if (dowNow === 0 && now.getHours() >= 18) {
+    content += await buildWeeklyRecapHtml(now);
   }
 
   document.getElementById('today-content').innerHTML = content;
@@ -1055,14 +1153,30 @@ async function askCoach() {
     showToast('Scrivi una domanda prima', 'error');
     return;
   }
+  if (!navigator.onLine) {
+    document.getElementById('coach-res').innerHTML = '<div class="tip orange">Sei offline. Il Coach AI richiede connessione.</div>';
+    return;
+  }
 
   const ld = document.getElementById('coach-ld');
   const res = document.getElementById('coach-res');
+  const btn = document.querySelector('button[onclick="askCoach()"]');
   ld.style.display = 'flex';
+  ld.innerHTML = '<span class="spinner" style="display:inline-block;width:16px;height:16px;border:2px solid var(--mu);border-top-color:var(--acc);border-radius:50%;animation:spin .9s linear infinite;margin-right:8px"></span> Sto pensando…';
   res.innerHTML = '';
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
 
-  const result = await API.chat(q);
+  // Timeout 30s con messaggio chiaro.
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout: 30s senza risposta. Riprova.')), 30000));
+
+  let result;
+  try {
+    result = await Promise.race([API.chat(q), timeout]);
+  } catch (e) {
+    result = { error: true, message: e.message };
+  }
   ld.style.display = 'none';
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
 
   if (result.error) {
     res.innerHTML = `<div class="tip red">${result.message}</div>`;
@@ -1329,6 +1443,7 @@ async function submitCheckin() {
   document.getElementById('ci-f').value = '';
   document.getElementById('ci-n').value = '';
   document.getElementById('ci-w').value = '';
+  clearCheckinDraft();
 }
 
 function buildFeedback(d) {
@@ -1956,6 +2071,60 @@ async function exportData() {
   showToast('Backup scaricato ✓', 'success');
 }
 
+// Export CSV: weights + workouts + checkins, per condivisione con preparatore/medico.
+async function exportCSV() {
+  const data = await Storage.exportAll();
+  const csvEscape = v => {
+    if (v == null) return '';
+    const s = String(v).replace(/"/g, '""');
+    return /[",\n]/.test(s) ? `"${s}"` : s;
+  };
+
+  const sections = [];
+
+  // weights
+  sections.push('# WEIGHTS');
+  sections.push('date,weight_kg');
+  for (const w of (data.weights || []).sort((a, b) => a.date.localeCompare(b.date))) {
+    sections.push(`${w.date},${w.weight}`);
+  }
+  sections.push('');
+
+  // workouts
+  sections.push('# WORKOUTS');
+  sections.push('date,type,duration_min,intensity,rpe,distance_km,hr_avg,hr_max,kcal_active,pain,source,notes');
+  for (const w of (data.workouts || []).sort((a, b) => a.date.localeCompare(b.date))) {
+    sections.push([
+      w.date, w.type, w.duration_min, w.intensity, w.rpe,
+      w.distance_km, w.hr_avg, w.hr_max, w.kcal_active,
+      Array.isArray(w.pain) ? w.pain.join(';') : '',
+      w.source, w.notes,
+    ].map(csvEscape).join(','));
+  }
+  sections.push('');
+
+  // checkins
+  sections.push('# CHECKINS');
+  sections.push('date,energy,sleep,sleep_hours,foodLevel,steps,active_kcal,resting_hr,hrv_ms,vo2max,workout,food,notes,source');
+  for (const c of (data.checkins || []).sort((a, b) => a.date.localeCompare(b.date))) {
+    sections.push([
+      c.date, c.energy, c.sleep, c.sleep_hours, c.foodLevel,
+      c.steps, c.active_kcal, c.resting_hr, c.hrv_ms, c.vo2max,
+      c.workout, c.food, c.notes, c.source,
+    ].map(csvEscape).join(','));
+  }
+
+  const csv = sections.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `coach-alex-export-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV scaricato ✓', 'success');
+}
+
 async function importData() {
   const input = document.createElement('input');
   input.type = 'file';
@@ -2395,6 +2564,7 @@ window.showInstallGuide = showInstallGuide;
 window.showShortcut = showShortcut;
 window.closeModal = closeModal;
 window.exportData = exportData;
+window.exportCSV = exportCSV;
 window.importData = importData;
 window.clearData = clearData;
 window.quickLogWeight = quickLogWeight;
