@@ -112,6 +112,7 @@ function navigateTo(tab) {
     if (tab === 'oggi') renderOggi();
     if (tab === 'raduno') renderRaduno();
     if (tab === 'cardio') renderCardio();
+    if (tab === 'dieta') renderFoodsDB();
     if (tab === 'prog') {
       renderProgress();
       drawWeightChart();
@@ -196,6 +197,176 @@ const WEEKLY_PLAN = {
        short: 'Riposo',
        actions: ['Recupero attivo'] },
 };
+
+// ── DB ALIMENTI (foods.js) ──────────────────────────────
+// State module-level: categoria attualmente filtrata.
+let foodsActiveCat = 'all';
+
+function renderFoodsDB() {
+  if (typeof FOODS_DB === 'undefined') return; // foods.js non caricato
+  const list = document.getElementById('foods-list');
+  const catsEl = document.getElementById('foods-cats');
+  const countEl = document.getElementById('foods-db-count');
+  const search = (document.getElementById('foods-search')?.value || '').toLowerCase().trim();
+  if (!list) return;
+
+  // Categorie chip
+  catsEl.innerHTML = FOOD_CATEGORIES.map(c =>
+    `<span class="opt" onclick="setFoodsCat('${c.id}')" style="${c.id === foodsActiveCat ? 'background:var(--acc);color:#000;border-color:var(--acc)' : ''};font-size:11px;padding:5px 10px">${c.icon} ${c.label}</span>`
+  ).join('');
+
+  // Filter
+  let filtered = FOODS_DB;
+  if (foodsActiveCat !== 'all') filtered = filtered.filter(f => f.cat === foodsActiveCat);
+  if (search) filtered = filtered.filter(f => f.name.toLowerCase().includes(search));
+
+  countEl.textContent = filtered.length;
+
+  if (filtered.length === 0) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--mu);text-align:center;padding:14px">Nessun cibo trovato.</div>';
+    return;
+  }
+
+  const trafficColor = { verde: 'var(--green)', giallo: 'var(--yellow)', rosso: 'var(--red)' };
+  list.innerHTML = filtered.map(f => `
+    <div onclick="addFoodToCheckin('${f.id}')" style="background:var(--s1);border-radius:8px;padding:8px 11px;margin-bottom:5px;cursor:pointer;display:flex;align-items:center;gap:10px">
+      <span style="width:6px;height:6px;border-radius:50%;background:${trafficColor[f.traffic] || 'var(--mu)'};flex-shrink:0"></span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600">${f.name}</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mu)">${f.kcal} kcal · ${f.prot}P · ${f.carb}C · ${f.fat}F · /100g · porzione ~${f.common_g}g</div>
+      </div>
+      <span style="font-size:18px;color:var(--acc);flex-shrink:0">+</span>
+    </div>`).join('');
+}
+
+function setFoodsCat(catId) {
+  foodsActiveCat = catId;
+  renderFoodsDB();
+}
+
+function addFoodToCheckin(foodId) {
+  const food = FOODS_DB.find(f => f.id === foodId);
+  if (!food) return;
+  const ta = document.getElementById('ci-f');
+  if (!ta) {
+    showToast('Apri la tab Check-in prima', 'error');
+    return;
+  }
+  const portion = `${food.common_g}g ${food.name.toLowerCase()}`;
+  ta.value = ta.value.trim() ? `${ta.value.trim()}, ${portion}` : portion;
+  showToast(`✓ Aggiunto: ${food.name}`, 'success');
+}
+
+// ── CONFRONTO FOTO PROGRESSO ───────────────────────────
+let photoCompareIdxA = 0;
+let photoCompareIdxB = -1; // -1 = ultima
+
+async function renderPhotoCompare() {
+  const el = document.getElementById('photo-compare-block');
+  if (!el) return;
+
+  const photos = await Storage.getProgressPhotos();
+  if (photos.length === 0) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--mu);text-align:center;padding:14px">Nessuna foto progresso.<br>Carica la prima nella tab Foto.</div>';
+    return;
+  }
+  if (photos.length === 1) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--mu);text-align:center;padding:14px">Hai ${photos.length} foto. Servono almeno 2 per il confronto.<br>Carica la prossima lunedì mattina!</div>`;
+    return;
+  }
+
+  // Sort cronologico (più vecchia prima)
+  const sorted = [...photos].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const idxA = Math.max(0, Math.min(photoCompareIdxA, sorted.length - 1));
+  const idxB = photoCompareIdxB === -1 ? sorted.length - 1 : Math.max(0, Math.min(photoCompareIdxB, sorted.length - 1));
+  const pA = sorted[idxA];
+  const pB = sorted[idxB];
+  const fmt = d => new Date(d).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+  const daysBetween = Math.abs(Math.round((new Date(pB.date) - new Date(pA.date)) / 86400000));
+
+  const opts = sorted.map((p, i) => `<option value="${i}">${p.week} · ${fmt(p.date)}</option>`).join('');
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div>
+        <select onchange="photoCompareIdxA=parseInt(this.value);renderPhotoCompare()" style="width:100%;background:var(--s1);border:1px solid var(--brd);color:var(--text);border-radius:7px;padding:6px;font-size:11px;margin-bottom:6px">
+          ${opts.replace(/value="${idxA}"/, `value="${idxA}" selected`)}
+        </select>
+        <div style="border-radius:9px;overflow:hidden;background:var(--s1)"><img src="${pA.image}" style="width:100%;display:block"></div>
+      </div>
+      <div>
+        <select onchange="photoCompareIdxB=parseInt(this.value);renderPhotoCompare()" style="width:100%;background:var(--s1);border:1px solid var(--brd);color:var(--text);border-radius:7px;padding:6px;font-size:11px;margin-bottom:6px">
+          ${opts.replace(/value="${idxB}"/, `value="${idxB}" selected`)}
+        </select>
+        <div style="border-radius:9px;overflow:hidden;background:var(--s1)"><img src="${pB.image}" style="width:100%;display:block"></div>
+      </div>
+    </div>
+    <div class="tip blue" style="text-align:center"><strong>${daysBetween} giorni</strong> tra le due foto.</div>`;
+
+  // Patch select per selezionare correttamente il valore (replace via stringa è fragile)
+  const selects = el.querySelectorAll('select');
+  if (selects[0]) selects[0].value = idxA;
+  if (selects[1]) selects[1].value = idxB;
+}
+
+// ── PREDIZIONE ARIET ──────────────────────────────────
+// Stima livello + distanza Ariet dai workout cardio recenti.
+// Calibrazione empirica su standard AA: livello 15.1 = 1105m a velocità ~14 km/h sostenuta.
+async function renderArietPrediction() {
+  const el = document.getElementById('ariet-prediction');
+  if (!el) return;
+
+  const workouts = await Storage.getWorkouts();
+  const sixtyDaysAgo = Date.now() - 60 * 86400000;
+  const recent = workouts.filter(w => new Date(w.date).getTime() > sixtyDaysAgo);
+  const cardio = recent.filter(w => ['hiit', 'z2', 'match'].includes(w.type));
+
+  if (cardio.length < 5) {
+    el.innerHTML = `<div class="tip yellow"><strong>Servono almeno 5 workout cardio</strong> negli ultimi 60 giorni per la stima. Hai ${cardio.length}/5.</div>`;
+    return;
+  }
+
+  // Heuristica: peak velocity media dei HIIT/match (proxy della velocità sostenibile in zona alta)
+  const hiits = cardio.filter(w => w.type === 'hiit' || w.type === 'match');
+  const speeds = hiits.map(w => {
+    if (w.distance_km && w.duration_min) return (w.distance_km / w.duration_min) * 60;
+    // Fallback: stima da intensità
+    if (w.intensity === 'max') return 14;
+    if (w.intensity === 'heavy') return 12;
+    if (w.intensity === 'moderate') return 10;
+    return 9;
+  }).filter(s => s > 0);
+
+  if (speeds.length === 0) {
+    el.innerHTML = `<div class="tip yellow">Nei tuoi workout HIIT manca distance_km. Aggiungi almeno la distanza nel form workout per stime più precise.</div>`;
+    return;
+  }
+
+  const avgPeakSpeed = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+
+  // Mappa empirica (m alla fine del livello). Standard AA = 1105m al 15.1
+  let predLevel, predDist;
+  if (avgPeakSpeed < 10) { predLevel = 13.0; predDist = 920; }
+  else if (avgPeakSpeed < 11) { predLevel = 13.5; predDist = 980; }
+  else if (avgPeakSpeed < 12) { predLevel = 14.0; predDist = 1040; }
+  else if (avgPeakSpeed < 13) { predLevel = 14.5; predDist = 1080; }
+  else if (avgPeakSpeed < 14) { predLevel = 15.1; predDist = 1105; }
+  else if (avgPeakSpeed < 15) { predLevel = 16.0; predDist = 1240; }
+  else if (avgPeakSpeed < 16) { predLevel = 17.0; predDist = 1380; }
+  else { predLevel = 18.0; predDist = 1500; }
+
+  const passes = predDist >= 1105;
+  const margin = predDist - 1105;
+  const confidence = cardio.length >= 12 ? 'alta' : cardio.length >= 8 ? 'media' : 'bassa';
+  const color = passes ? 'var(--green)' : 'var(--red)';
+
+  el.innerHTML = `
+    <div class="tip ${passes ? 'green' : 'orange'}"><strong>${passes ? '✓ Stima sopra soglia AA' : '⚠️ Stima sotto soglia AA'}</strong> · confidenza ${confidence}</div>
+    <div class="row"><div class="ri">📏</div><div class="rc"><div class="rt">Distanza stimata</div><div class="rs">soglia AA: 1105m</div></div><div class="rv" style="color:${color};font-size:14px">${predDist}m</div></div>
+    <div class="row"><div class="ri">🎯</div><div class="rc"><div class="rt">Livello stimato</div><div class="rs">${margin >= 0 ? '+' : ''}${margin}m vs soglia</div></div><div class="rv" style="color:${color};font-size:14px">${predLevel}</div></div>
+    <div class="row"><div class="ri">🏃</div><div class="rc"><div class="rt">Velocità peak media</div><div class="rs">media di ${speeds.length} HIIT/partite recenti</div></div><div class="rv">${avgPeakSpeed.toFixed(1)} km/h</div></div>
+    <div class="tip blue" style="margin-top:10px;font-size:11px"><strong>Disclaimer:</strong> stima basata su mappa empirica tapis → shuttle. Il test reale conta su elasticità inversioni, sleep, glicogeno, mentale. Trattalo come orientamento, non verdetto.</div>`;
+}
 
 // Helper: copia testo in clipboard con fallback per Safari < 13.4.
 async function copyToClipboard(text, btnEl) {
@@ -470,6 +641,9 @@ async function renderRaduno() {
       <div class="rc"><div class="rt">${p.day}</div><div class="rs"><strong>${p.label}.</strong> ${p.desc}</div></div>
       <div class="rv" style="color:${p.color}">${p.tag}</div>
     </div>`).join('');
+
+  // Predizione Ariet (calcolo locale da workout cardio recenti)
+  await renderArietPrediction();
 }
 
 // ── CARDIO ──────────────────────────────────────────────
@@ -796,6 +970,9 @@ async function renderProgress() {
 
   // Pattern detection (locale rule-based + AI opzionale)
   await renderPatternsBlock();
+
+  // Confronto foto progresso side-by-side
+  await renderPhotoCompare();
 
   // Stats
   await renderStats(checkins, weights);

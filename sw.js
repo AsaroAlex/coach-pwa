@@ -1,5 +1,5 @@
-// Coach Alex Service Worker v2.0
-const CACHE_NAME = 'coach-alex-v2';
+// Coach Alex Service Worker v3.0
+const CACHE_NAME = 'coach-alex-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const ASSETS = [
   './src/api.js',
   './src/storage.js',
   './src/health.js',
+  './src/foods.js',
   './src/notifications.js',
   './assets/icon-180.png',
   './assets/icon-192.png',
@@ -16,7 +17,7 @@ const ASSETS = [
 
 // Install: precache static assets
 self.addEventListener('install', event => {
-  console.log('[SW] Installing v2');
+  console.log('[SW] Installing v3');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => cache.addAll(ASSETS))
@@ -26,7 +27,7 @@ self.addEventListener('install', event => {
 
 // Activate: cleanup old caches
 self.addEventListener('activate', event => {
-  console.log('[SW] Activating v2');
+  console.log('[SW] Activating v3');
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))

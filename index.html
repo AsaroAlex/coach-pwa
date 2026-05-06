@@ -387,6 +387,12 @@ hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
       <div class="row"><div class="ri">3️⃣</div><div class="rc"><div class="rt">Livelli 13-15.1: Tutto</div><div class="rs">BPM >180. 1105m è raggiungibile. Pensa al prossimo shuttle.</div></div></div>
     </div>
   </div>
+
+  <!-- Predizione Ariet (calcolo locale da workout cardio) -->
+  <div class="blk">
+    <div class="bh"><div class="bi">📈</div><div class="bt">Predizione Ariet (stima)</div><div class="tag tu">DA TUOI WORKOUT</div></div>
+    <div class="bb" id="ariet-prediction"></div>
+  </div>
 </div>
 
 <!-- ===== ZONE CARDIACHE ===== -->
@@ -483,6 +489,17 @@ hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
       <div style="font-size:12px;color:var(--mu);line-height:1.7;margin-bottom:10px">Pasta/riso (solo pranzo o pre-WO) · frutta · banane · patate · formaggi magri</div>
       <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:8px">🔴 ROSSO — Limita</div>
       <div style="font-size:12px;color:var(--mu);line-height:1.7">Pizza/fast food (max 1×/sett) · alcolici (max 2 sere) · dolci · fritti</div>
+    </div>
+  </div>
+
+  <!-- DB alimenti italiani (Coop) — tap per aggiungere al check-in food -->
+  <div class="blk">
+    <div class="bh"><div class="bi">📚</div><div class="bt">Database alimenti</div><div class="tag tg" id="foods-db-count">0</div></div>
+    <div class="bb">
+      <input type="text" class="inp" id="foods-search" placeholder="Cerca cibo (es. pollo, ricotta, pasta)..." oninput="renderFoodsDB()" style="margin-bottom:8px">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px" id="foods-cats"></div>
+      <div id="foods-list" style="max-height:340px;overflow-y:auto"></div>
+      <div class="tip blue" style="margin-top:8px;font-size:11px">💡 Tap su un cibo per aggiungerlo al campo "cosa hai mangiato" del check-in serale.</div>
     </div>
   </div>
 
@@ -808,6 +825,12 @@ hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
     </div>
   </div>
 
+  <!-- Confronto foto progresso side-by-side -->
+  <div class="blk">
+    <div class="bh"><div class="bi">📸</div><div class="bt">Confronto foto progresso</div><div class="tag tu">PRIMA / DOPO</div></div>
+    <div class="bb" id="photo-compare-block"></div>
+  </div>
+
   <!-- Statistics -->
   <div class="blk">
     <div class="bh"><div class="bi">📊</div><div class="bt">Statistiche miglioramento</div><div class="tag tu">DOVE MIGLIORI</div></div>
@@ -1116,6 +1139,7 @@ hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
 <!-- SCRIPTS -->
 <script src="src/storage.js"></script>
 <script src="src/api.js"></script>
+<script src="src/foods.js"></script>
 <script src="src/health.js"></script>
 <script src="src/notifications.js"></script>
 <script src="src/app.js"></script>

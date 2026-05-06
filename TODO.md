@@ -12,18 +12,7 @@ Tutti i task in alta priorità sono stati completati il 6 maggio 2026. Vedi sezi
 
 ## 🟡 MEDIA PRIORITÀ (entro fine maggio)
 
-- [ ] **Database alimenti italiani in Dieta**
-  - 50-100 cibi più comuni Coop con macros
-  - Tap → aggiunge a check-in pasti
-  - No conteggio calorie (semaforo + proteine totali)
-
-- [ ] **Confronto foto progresso side-by-side**
-  - In tab Forma: 2 foto affiancate (oggi vs settimana 1)
-  - Slider per scorrere settimane
-
-- [ ] **Predizione tempo Ariet basata su trend cardio**
-  - Da workout HIIT registrati → stima distanza Ariet teorica
-  - Mostrare in tab Test
+Tutti i task in media priorità sono stati completati il 6 maggio 2026. Vedi sezione COMPLETATI.
 
 ---
 
@@ -83,6 +72,12 @@ Tutti i task in alta priorità sono stati completati il 6 maggio 2026. Vedi sezi
 ---
 
 ## ✅ COMPLETATI
+
+### 6 maggio 2026 (V1.4)
+- ✅ Database alimenti italiani Coop in tab Dieta: 60 cibi con macros, ricerca + filtro per categoria, tap aggiunge a check-in food (file `src/foods.js`)
+- ✅ Confronto foto progresso side-by-side in tab Forma: 2 dropdown + 2 immagini affiancate + giorni tra le due
+- ✅ Predizione Ariet in tab Test: stima livello/distanza da peak speed dei workout HIIT/match recenti, mappa empirica calibrata su soglia AA 1105m@15.1
+- ✅ Service Worker bumpato v2→v3 (precache `src/foods.js`)
 
 ### 6 maggio 2026 (V1.3)
 - ✅ Apple Shortcuts hub in Setup: 5 ricette accordion con bottone "Copia URL" (sync peso, sync auto da Salute, sync workout, quick check-in serale, backup iCloud settimanale)
