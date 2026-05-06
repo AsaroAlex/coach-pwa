@@ -70,6 +70,28 @@ async function handleURLActions() {
   else if (action === 'export') {
     setTimeout(() => exportData(), 500);
   }
+  else if (action === 'bulk') {
+    navigateTo('settings');
+    setTimeout(async () => {
+      const ta = document.getElementById('bulk-paste');
+      if (ta) {
+        ta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        ta.focus();
+        // Su iOS PWA il clipboard.readText richiede gesture; su desktop spesso funziona.
+        try {
+          if (navigator.clipboard?.readText) {
+            const txt = await navigator.clipboard.readText();
+            if (txt && txt.trim().startsWith('{')) {
+              ta.value = txt;
+              showToast('JSON incollato dagli appunti — tap "Analizza"', 'success');
+            }
+          }
+        } catch (_) {
+          showToast('Tap "📋 Incolla dagli appunti" per leggere il JSON', 'success');
+        }
+      }
+    }, 300);
+  }
 }
 
 async function completeOnboarding() {
@@ -1168,6 +1190,79 @@ async function importHealthScreenshots(input) {
   await updateApiUsage();
   await renderAll();
   showToast(`✓ ${processed} screenshot importati`, 'success');
+}
+
+// ── BULK IMPORT APPLE SALUTE ────────────────────────────
+async function bulkPasteFromClipboard() {
+  const ta = document.getElementById('bulk-paste');
+  if (!ta) return;
+  try {
+    if (!navigator.clipboard?.readText) {
+      showToast('Browser senza accesso clipboard. Long-press → Incolla nella textarea.', 'error');
+      ta.focus();
+      return;
+    }
+    const txt = await navigator.clipboard.readText();
+    if (!txt || !txt.trim()) {
+      showToast('Clipboard vuota. Esegui prima lo Shortcut iOS.', 'error');
+      return;
+    }
+    ta.value = txt;
+    showToast(`Incollati ${txt.length} char. Tap "Analizza".`, 'success');
+  } catch (e) {
+    showToast('Permesso clipboard negato. Long-press → Incolla nella textarea.', 'error');
+    ta.focus();
+  }
+}
+
+async function bulkAnalyze() {
+  const ta = document.getElementById('bulk-paste');
+  const out = document.getElementById('bulk-import-result');
+  if (!ta || !out) return;
+  const txt = ta.value.trim();
+  if (!txt) {
+    out.innerHTML = `<div class="tip orange">Incolla prima il JSON dello Shortcut.</div>`;
+    return;
+  }
+
+  out.innerHTML = `<div class="tip blue">Parsing JSON…</div>`;
+  let parsed;
+  try {
+    parsed = Health.parseBulkJSON(txt);
+  } catch (e) {
+    out.innerHTML = `<div class="tip orange"><strong>Errore parsing:</strong> ${e.message}</div>`;
+    return;
+  }
+  if (!parsed.days.length) {
+    out.innerHTML = `<div class="tip orange">JSON valido ma 0 giorni dentro. Controlla che le LISTE_X dello Shortcut siano popolate.</div>`;
+    return;
+  }
+
+  out.innerHTML = `<div class="tip blue">Importo ${parsed.days.length} giorni…</div>`;
+
+  const result = await Health.bulkImport(parsed, (cur, tot) => {
+    out.innerHTML = `<div class="tip blue">Importati ${cur}/${tot} giorni…</div>`;
+  });
+
+  const errCount = result.errors.length;
+  const summary = `
+    <div class="blk" style="margin-top:6px">
+      <div class="bh"><div class="bi">✓</div><div class="bt">Import completato</div><div class="tag ${errCount ? 'ty' : 'tg'}">${result.totalDays}gg</div></div>
+      <div class="bb">
+        <div class="row"><div class="ri">⚖️</div><div class="rc"><div class="rt">Pesi</div></div><div class="rv">${result.added_weights}</div></div>
+        <div class="row"><div class="ri">💪</div><div class="rc"><div class="rt">Workouts</div></div><div class="rv">${result.added_workouts}</div></div>
+        <div class="row"><div class="ri">📊</div><div class="rc"><div class="rt">Check-in giornalieri (HR/HRV/sleep/passi/kcal)</div></div><div class="rv">${result.added_checkins}</div></div>
+        ${errCount ? `<div class="tip orange" style="margin-top:8px"><strong>${errCount} errori:</strong><br>${result.errors.slice(0, 5).map(e => `${e.date}: ${e.error}`).join('<br>')}${errCount > 5 ? '<br>…' : ''}</div>` : ''}
+      </div>
+    </div>`;
+  out.innerHTML = summary;
+  await renderAll();
+  showToast(`✓ Storico importato: ${result.added_weights} pesi · ${result.added_workouts} workouts · ${result.added_checkins} check-in`, 'success');
+}
+
+async function copyBulkJsonTemplate(btnEl) {
+  const tpl = Health.bulkJsonTemplate(365);
+  await copyToClipboard(tpl, btnEl);
 }
 
 // ── MEAL PLANNER ────────────────────────────────────────
@@ -2308,6 +2403,9 @@ window.drawWeightChart = drawWeightChart;
 window.openWorkoutForm = openWorkoutForm;
 window.prefillAltWorkout = prefillAltWorkout;
 window.importHealthScreenshots = importHealthScreenshots;
+window.bulkPasteFromClipboard = bulkPasteFromClipboard;
+window.bulkAnalyze = bulkAnalyze;
+window.copyBulkJsonTemplate = copyBulkJsonTemplate;
 window.closeWorkoutForm = closeWorkoutForm;
 window.selectWoType = selectWoType;
 window.selectInt = selectInt;

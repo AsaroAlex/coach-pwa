@@ -197,6 +197,46 @@ const Storage = {
     if (!w.date) w.date = new Date().toISOString();
     return dbPut('workouts', w);
   },
+
+  // Upsert via natural key per import bulk Apple Health: idempotente sul re-import.
+  // naturalKey = "apple_<YYYYMMDD>_<type>_<duration_min>_<HHMM>" quando source==='apple-health'
+  async upsertWorkoutByNaturalKey(w) {
+    if (!w.date) w.date = new Date().toISOString();
+    const d = new Date(w.date);
+    const yyyymmdd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const hhmm = `${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+    const naturalKey = `apple_${yyyymmdd}_${w.type || 'altro'}_${w.duration_min || 0}_${hhmm}`;
+    w.id = naturalKey;
+    w.naturalKey = naturalKey;
+    return dbPut('workouts', w);
+  },
+
+  async upsertWeight(weight, dateYmd) {
+    const d = dateYmd || new Date().toISOString().split('T')[0];
+    return dbPut('weights', { date: d, weight: parseFloat(weight) });
+  },
+
+  // Merge campi nuovi (non-null) sopra checkin esistente in stessa data, senza
+  // sovrascrivere campi manuali (energy/sleep/food/notes) se gia presenti.
+  async upsertCheckin(c) {
+    if (!c.date) c.date = new Date().toISOString();
+    // Normalizza la chiave: per dati Apple aggregati daily usiamo midnight UTC del giorno
+    const d = new Date(c.date);
+    const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T00:00:00.000Z`;
+    const existing = await dbGet('checkins', dayKey) || await dbGet('checkins', c.date);
+    const merged = { ...existing, ...c };
+    // I campi manuali del check-in serale prevalgono se esistono
+    if (existing) {
+      if (existing.energy != null) merged.energy = existing.energy;
+      if (existing.sleep != null) merged.sleep = existing.sleep;
+      if (existing.foodLevel != null) merged.foodLevel = existing.foodLevel;
+      if (existing.food != null && existing.food !== '') merged.food = existing.food;
+      if (existing.notes != null && existing.notes !== '') merged.notes = existing.notes;
+      if (existing.workout != null && existing.workout !== '') merged.workout = existing.workout;
+    }
+    merged.date = dayKey;
+    return dbPut('checkins', merged);
+  },
   async getWorkouts() {
     const all = await dbGetAll('workouts');
     return all.sort((a, b) => new Date(b.date) - new Date(a.date));

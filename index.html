@@ -1118,9 +1118,24 @@ hr{border:none;border-top:1px solid var(--brd-soft);margin:11px 0;}
     </div>
   </div>
 
-  <!-- Apple Shortcuts pronti (5 ricette copiabili) -->
+  <!-- Bulk import storico Apple Salute -->
   <div class="blk">
-    <div class="bh"><div class="bi">⚡</div><div class="bt">Apple Shortcuts pronti</div><div class="tag tu">5 RICETTE</div></div>
+    <div class="bh"><div class="bi">📦</div><div class="bt">Importa storico Apple Salute (1-click)</div><div class="tag tu">BULK</div></div>
+    <div class="bb">
+      <div class="tip blue"><strong>Come funziona:</strong> esegui lo Shortcut iOS "Import storico Coach Alex" (vedi sezione Shortcuts qui sotto), poi torna qui e tap "📋 Incolla". Idempotente: se ri-esegui non duplica.</div>
+      <textarea id="bulk-paste" placeholder='{"version":1,"exportedAt":"...","days":[...]}' style="width:100%;min-height:90px;background:var(--s2);border:1px solid var(--brd);color:var(--text);border-radius:9px;padding:10px;font-family:'JetBrains Mono',monospace;font-size:11px;margin-bottom:8px"></textarea>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn-s" onclick="bulkPasteFromClipboard()" style="flex:1;min-width:140px">📋 Incolla dagli appunti</button>
+        <button class="btn-s" onclick="bulkAnalyze()" style="flex:1;min-width:120px">🚀 Analizza e importa</button>
+      </div>
+      <button class="btn-s" onclick="copyBulkJsonTemplate(this)" style="width:100%;margin-top:6px;font-size:10px;padding:6px;color:var(--mu)">📋 Copia template JSON per Shortcut</button>
+      <div id="bulk-import-result" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- Apple Shortcuts pronti -->
+  <div class="blk">
+    <div class="bh"><div class="bi">⚡</div><div class="bt">Apple Shortcuts pronti</div><div class="tag tu">RICETTE</div></div>
     <div class="bb">
       <div class="tip blue">Tap per espandere ogni ricetta. Bottone "Copia URL" mette in clipboard l'URL pronto da incollare in <strong>Comandi Rapidi → Apri URL</strong>.</div>
       <div id="shortcuts-hub"></div>
