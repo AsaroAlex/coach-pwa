@@ -483,6 +483,12 @@ function renderWeeklyPlanList(targetElId) {
   }).join('');
 }
 
+// Mappa dow → durata base sessione in minuti.
+// Allineato a WEEKLY_PLAN: LUN/PESI 30, MAR/Z2 35, MER/HIIT 25, GIO/PESI 30, VEN/Z2-lungo 45, SAB 30, DOM 90 partita
+function dowToDuration(dow) {
+  return { 1: 30, 2: 35, 3: 25, 4: 30, 5: 45, 6: 30, 0: 90 }[dow] || 30;
+}
+
 // ── OGGI ────────────────────────────────────────────────
 async function renderOggi() {
   const now = new Date();
@@ -502,11 +508,28 @@ async function renderOggi() {
   const test1 = TEST_DATES.test1;
   const test1Days = Math.ceil((test1 - now) / (24 * 3600 * 1000));
 
+  // ── SIGNALS scientifici (HRV/RHR/sessionLoad/mesoWeek/taper) ──
+  const allCheckins = await Storage.getCheckins();
+  const recent14 = allCheckins
+    .map(c => ({ ...c, _t: new Date(c.date).getTime() }))
+    .filter(c => c._t > Date.now() - 14 * 86400000)
+    .sort((a, b) => a._t - b._t);
+  const hrvSeries = recent14.map(c => c.hrv_ms).filter(v => typeof v === 'number');
+  const rhrSeries = recent14.map(c => c.resting_hr).filter(v => typeof v === 'number');
+  const allWorkouts = await Storage.getWorkouts();
+  const hrvSig = Science.detectHRVDrop(hrvSeries);
+  const rhrSig = Science.detectRHRRise(rhrSeries);
+  const sessionLoad = Science.calcSessionLoad(allWorkouts, 7);
+  const mesoWeek = Science.currentMesocycleWeek(now, appState.profile.mesoAnchor || '2026-04-06');
+  const phaseRes = Science.currentPhase(now, TEST_DATES, upcomingEvents);
+  const taperVol = Science.taperVolumeMultiplier(phaseRes.daysToTest);
+  const checkinFresh = Science.isCheckinFresh(yesterdayCheckin);
+
   // ── SEMAFORO autoregolazione ──
   let semaforoPunti = 0;
   let semaforoReasons = [];
 
-  if (yesterdayCheckin) {
+  if (yesterdayCheckin && checkinFresh) {
     if (yesterdayCheckin.sleep === '<6') { semaforoPunti += 3; semaforoReasons.push('sonno <6h'); }
     else if (yesterdayCheckin.sleep === '6-7') { semaforoPunti += 1; }
     if (yesterdayCheckin.energy <= 2) { semaforoPunti += 3; semaforoReasons.push('energia bassa'); }
@@ -524,7 +547,22 @@ async function renderOggi() {
     semaforoReasons.push('ieri intensità alta');
   }
 
+  // HRV/RHR signals (scientifico, applicabili anche senza check-in fresh)
+  if (hrvSig.drop) {
+    semaforoPunti += 3;
+    semaforoReasons.push(`HRV calo ${hrvSig.pct}%`);
+  }
+  if (rhrSig.rise) {
+    semaforoPunti += 2;
+    semaforoReasons.push(`RHR +${rhrSig.delta} bpm vs baseline`);
+  }
+  if (sessionLoad > 2000) {
+    semaforoPunti += 2;
+    semaforoReasons.push(`carico 7gg ${Math.round(sessionLoad)} AU`);
+  }
+
   let semaforo = 'verde';
+  if (!yesterdayCheckin || !checkinFresh) semaforo = 'grigio';
   if (semaforoPunti >= 4) semaforo = 'rosso';
   else if (semaforoPunti >= 2) semaforo = 'giallo';
 
@@ -543,6 +581,7 @@ async function renderOggi() {
   // Override automatico se oggi c'è un evento (raduno, partita)
   const override = await planOverrideForToday(now);
   let plan = override ? { ...override } : { ...WEEKLY_PLAN[dow] };
+  const planModifiers = []; // motivi visibili in UI
 
   // Auto-adattamento per stagione calda (estate giu-ago): suggerimenti idratazione + orario
   const month = now.getMonth(); // 0=gen, 5=giu, 7=ago
@@ -550,7 +589,29 @@ async function renderOggi() {
     plan.actions = [...plan.actions, '🌡️ Caldo: allenati 7-9 mattina o dopo 19', '💧 +500ml acqua durante sessione'];
   }
 
-  // Override plan se semaforo rosso
+  // ── AUTOREGOLAZIONE basata su signals scientifici ──
+  // Taper graduale verso test (T-5..T0)
+  if (taperVol < 1.0 && plan.tag !== 'TEST' && plan.tag !== 'PARTITA' && plan.tag !== 'RIPOSO') {
+    const baseDuration = dowToDuration(dow);
+    const newDuration = Math.round(baseDuration * taperVol);
+    if (taperVol === 0) {
+      planModifiers.push(`🛌 Taper T${phaseRes.daysToTest}: oggi ZERO allenamento intenso (solo mobilità 10min se vuoi)`);
+    } else {
+      planModifiers.push(`📉 Taper T${phaseRes.daysToTest}: volume ridotto a ${Math.round(taperVol * 100)}% (~${newDuration}min anziché ${baseDuration})`);
+    }
+  }
+
+  // Mesociclo settimana 4 = deload
+  if (mesoWeek === 4 && plan.tag !== 'RIPOSO' && plan.tag !== 'TEST' && taperVol === 1.0) {
+    planModifiers.push('🔄 Settimana 4 mesociclo (DELOAD): volume × 0.6, RIR +2 sui pesi');
+  }
+
+  // Carico cumulativo > 2000 AU
+  if (sessionLoad > 2000 && taperVol === 1.0) {
+    planModifiers.push(`⚠️ Carico 7gg alto (${Math.round(sessionLoad)} AU > 2000): considera Z2 leggero al posto di intensità`);
+  }
+
+  // Override plan se semaforo rosso (override duro: sostituisce piano)
   if (semaforo === 'rosso') {
     plan = {
       icon: '🚨',
@@ -565,6 +626,9 @@ async function renderOggi() {
       ...plan,
       desc: '🟡 Semaforo giallo. ' + plan.desc + ' Riduci intensità −20% (volume o velocità).',
     };
+  } else if (semaforo === 'grigio') {
+    // Stato in attesa: non sovrascrivere il piano, ma comunica chiaramente
+    planModifiers.push('⏳ Semaforo in attesa di check-in di ieri/oggi per attivare l\'autoregolazione completa');
   }
 
   document.getElementById('today-icon').textContent = plan.icon;
@@ -576,22 +640,40 @@ async function renderOggi() {
 
   // Semaforo banner
   const semColors = {
-    verde: { bg: 'rgba(0,255,136,.1)', col: 'var(--green)', em: '🟢', txt: 'OK' },
+    verde:  { bg: 'rgba(0,255,136,.1)',  col: 'var(--green)',  em: '🟢', txt: 'OK' },
     giallo: { bg: 'rgba(255,200,0,.12)', col: 'var(--yellow)', em: '🟡', txt: 'Cautela' },
-    rosso: { bg: 'rgba(255,59,92,.12)', col: 'var(--red)', em: '🔴', txt: 'Recovery' }
+    rosso:  { bg: 'rgba(255,59,92,.12)', col: 'var(--red)',    em: '🔴', txt: 'Recovery' },
+    grigio: { bg: 'rgba(127,127,127,.10)', col: 'var(--mu)',   em: '⚪', txt: 'In attesa' },
   };
   const sc = semColors[semaforo];
+  const semaforoSubText = semaforo === 'grigio'
+    ? 'Manca il check-in di ieri (o è troppo vecchio). Fai il check-in serale per attivare il semaforo.'
+    : (semaforoReasons.length ? semaforoReasons.join(' · ') : 'tutto in ordine');
   content += `<div style="background:${sc.bg};border:1px solid ${sc.col};border-radius:11px;padding:10px 12px;margin-bottom:10px">
     <div style="display:flex;align-items:center;gap:8px">
       <span style="font-size:18px">${sc.em}</span>
       <div style="flex:1">
         <strong style="color:${sc.col};font-size:13px">Semaforo: ${sc.txt}</strong>
-        <div style="font-size:11px;color:var(--mu);margin-top:1px">${semaforoReasons.length ? semaforoReasons.join(' · ') : 'tutto in ordine'}</div>
+        <div style="font-size:11px;color:var(--mu);margin-top:1px">${semaforoSubText}</div>
       </div>
     </div>
   </div>`;
 
   content += `<div class="tip orange">${plan.desc}</div>`;
+
+  // Modifier autoregolazione (HRV/RHR/taper/mesoWeek/sessionLoad)
+  if (planModifiers.length > 0) {
+    content += `<div class="tip yellow" style="margin-top:8px">${planModifiers.map(m => `<div>${m}</div>`).join('')}</div>`;
+  }
+
+  // Pain alternatives se ieri c'era dolore
+  if (yesterdayWorkout?.pain?.length > 0) {
+    const alts = Science.alternativesForPain(yesterdayWorkout.pain);
+    if (alts.length > 0) {
+      content += `<div class="tip blue" style="margin-top:8px"><strong>🦵 Alternative no-impact (per ${yesterdayWorkout.pain.join(', ')}):</strong></div>`;
+      content += alts.map(a => `<div class="row" onclick="prefillAltWorkout('${a.type}', ${a.duration_min}, '${a.intensity}')" style="cursor:pointer"><div class="ri">→</div><div class="rc"><div class="rt">${a.label}</div><div class="rs">tap per registrare nel form workout</div></div></div>`).join('');
+    }
+  }
 
   // Workout di ieri
   if (yesterdayWorkout) {
@@ -2025,6 +2107,22 @@ function closeWorkoutForm() {
   document.getElementById('workout-modal').classList.remove('show');
 }
 
+// Apre il form workout pre-selezionato su un'alternativa no-impact (da pain alternatives in Oggi).
+function prefillAltWorkout(type, durationMin, intensity) {
+  navigateTo('workouts');
+  setTimeout(() => {
+    openWorkoutForm();
+    setTimeout(() => {
+      const opt = document.querySelector(`#wo-type-grid .opt[data-type="${type}"]`);
+      if (opt) selectWoType(type, opt);
+      const dEl = document.getElementById('wo-duration');
+      if (dEl) dEl.value = durationMin;
+      const intEl = document.querySelector(`#wo-intensity-row .cib[data-int="${intensity}"]`);
+      if (intEl) selectInt(intensity, intEl);
+    }, 60);
+  }, 200);
+}
+
 function selectWoType(id, el) {
   workoutFormData.type = id;
   document.querySelectorAll('#wo-type-grid .opt').forEach(o => o.classList.remove('sel'));
@@ -2208,6 +2306,7 @@ window.quickLogWeight = quickLogWeight;
 window.quickLogWeightValue = quickLogWeightValue;
 window.drawWeightChart = drawWeightChart;
 window.openWorkoutForm = openWorkoutForm;
+window.prefillAltWorkout = prefillAltWorkout;
 window.importHealthScreenshots = importHealthScreenshots;
 window.closeWorkoutForm = closeWorkoutForm;
 window.selectWoType = selectWoType;
