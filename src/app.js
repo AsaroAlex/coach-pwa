@@ -27,6 +27,9 @@ async function init() {
       document.getElementById('install-banner').style.display = 'flex';
     }
 
+    // Seed eventi playoff (idempotente)
+    await seedPlayoffEvents();
+
     // Render initial state
     await renderAll();
 
@@ -75,9 +78,54 @@ async function completeOnboarding() {
   appState.profile.onboardingDone = true;
   await Storage.saveProfile(appState.profile);
   await Storage.addWeight(weight);
+  await seedPlayoffEvents();
   document.getElementById('onboarding').classList.remove('show');
   await renderAll();
   showToast('Setup completato ✓', 'success');
+}
+
+// ── HEALTH HERO SUB ──────────────────────────────────────
+// Aggiorna il sottotitolo della card "Sincronizza Apple Salute" mostrando l'ultimo sync.
+async function refreshHealthHeroSub() {
+  const el = document.getElementById('health-hero-sub');
+  if (!el) return;
+  const checkins = await Storage.getCheckins();
+  const last = checkins
+    .filter(c => c.source === 'health-screenshot')
+    .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+  if (!last) return; // mantieni il testo iniziale
+  const days = Math.floor((Date.now() - new Date(last.date).getTime()) / 86400000);
+  const fmt = days === 0 ? 'oggi' : days === 1 ? 'ieri' : `${days} gg fa`;
+  const bits = [];
+  if (last.sleep_hours) bits.push(`💤 ${last.sleep_hours}h`);
+  if (last.steps) bits.push(`🚶 ${last.steps}`);
+  if (last.resting_hr) bits.push(`❤️ ${last.resting_hr}`);
+  if (last.hrv_ms) bits.push(`HRV ${last.hrv_ms}ms`);
+  el.innerHTML = `Ultimo sync ${fmt}${bits.length ? ' · ' + bits.join(' · ') : ''}. Carica nuovi screenshot per aggiornare.`;
+}
+
+// ── PLAYOFF SEED ─────────────────────────────────────────
+// Inserisce in modo idempotente gli eventi del weekend playoff (raduno sab + partita dom).
+// Riconoscibile via id deterministico per evitare duplicati.
+async function seedPlayoffEvents() {
+  const events = await Storage.getEvents();
+  const ids = new Set(events.map(e => e.id));
+
+  const seeds = [
+    { id: 'seed-raduno-test1', type: 'raduno', date: TEST_DATES.test1.toISOString(),
+      time: '09:00', intensity: 'heavy',
+      notes: 'TEST 1 Ariet AA · Bologna · Impianto Alberto Mario · 1105m al livello 15.1' },
+    { id: 'seed-partita-playoff', type: 'partita',
+      date: new Date(TEST_DATES.test1.getTime() + 86400000).toISOString(),
+      intensity: 'heavy',
+      notes: 'Partita PLAYOFF · giorno dopo il test (24h dopo Ariet, gestire fatica)' },
+  ];
+
+  for (const s of seeds) {
+    if (!ids.has(s.id) && new Date(s.date) >= new Date(Date.now() - 86400000)) {
+      await Storage.addEvent(s);
+    }
+  }
 }
 
 // ── NAVIGATION ──────────────────────────────────────────
@@ -197,6 +245,30 @@ const WEEKLY_PLAN = {
        short: 'Riposo',
        actions: ['Recupero attivo'] },
 };
+
+// Override del piano sui giorni in cui ci sono eventi (raduno/partita).
+// Restituisce un piano ad-hoc sostituendo quello base, mantenendo la stessa shape.
+async function planOverrideForToday(now = new Date()) {
+  const events = await Storage.getUpcomingEvents();
+  const todayEvent = events.find(e => isSameDay(new Date(e.date), now));
+  if (!todayEvent) return null;
+
+  if (todayEvent.type === 'raduno') {
+    return {
+      icon: '🏟️', title: 'OGGI · Test Ariet (raduno)', tag: 'TEST', color: 'var(--acc)',
+      desc: 'Giorno del test. Sveglia 07:00 · colazione 80g avena + banana + caffè · al campo 30min prima · warm-up 5 min progressivo.',
+      actions: ['H-3: ultimo pasto leggero', 'H-1: idratazione 250ml', 'Warm-up 5 min progressivo', 'Strategia: conservativo fino al lvl 12, poi tutto'],
+    };
+  }
+  if (todayEvent.type === 'partita') {
+    return {
+      icon: '⚽', title: 'OGGI · Partita playoff', tag: 'PARTITA', color: 'var(--yellow)',
+      desc: 'Match day. Hai fatto il test ieri: gestisci la fatica residua. Pre-partita: idratazione + carbs leggeri 2-3h prima.',
+      actions: ['H-3: 80g pasta + petto pollo', 'H-1: 250ml acqua + banana', 'Warm-up dinamico 8 min', 'Post-partita: ghiaccio se serve, recovery 48h'],
+    };
+  }
+  return null;
+}
 
 // ── DB ALIMENTI (foods.js) ──────────────────────────────
 // State module-level: categoria attualmente filtrata.
@@ -468,11 +540,13 @@ async function renderOggi() {
   document.getElementById('coach-msg').innerHTML = msg;
 
   // Source of truth: WEEKLY_PLAN definito sopra (condiviso con Cardio + Allena)
-  let plan = { ...WEEKLY_PLAN[dow] };
+  // Override automatico se oggi c'è un evento (raduno, partita)
+  const override = await planOverrideForToday(now);
+  let plan = override ? { ...override } : { ...WEEKLY_PLAN[dow] };
 
   // Auto-adattamento per stagione calda (estate giu-ago): suggerimenti idratazione + orario
   const month = now.getMonth(); // 0=gen, 5=giu, 7=ago
-  if (month >= 5 && month <= 7 && plan.tag !== 'RIPOSO') {
+  if (month >= 5 && month <= 7 && plan.tag !== 'RIPOSO' && plan.tag !== 'TEST' && plan.tag !== 'PARTITA') {
     plan.actions = [...plan.actions, '🌡️ Caldo: allenati 7-9 mattina o dopo 19', '💧 +500ml acqua durante sessione'];
   }
 
@@ -565,6 +639,9 @@ async function renderOggi() {
 
   document.getElementById('today-content').innerHTML = content;
 
+  // Aggiorna sottotitolo della Health Hero card con ultimo sync (se presente)
+  await refreshHealthHeroSub();
+
   // Render raduno alert if test1 within 14 days
   const radunoAlert = document.getElementById('raduno-alert');
   if (test1Days > 0 && test1Days <= 14) {
@@ -624,23 +701,40 @@ async function renderRaduno() {
   const augDays = Math.max(0, Math.ceil(augDiff / 86400000));
   document.getElementById('aug-countdown').textContent = `~${augDays} gg`;
 
-  // Protocol days
-  const today = now.getDay();
-  const protocolDays = [
-    { day: 'Lun 4 Mag — OGGI', icon: '🟢', label: 'Recupero attivo', desc: 'Hai fatto la partita. Solo cammino. Mangia bene: +carbs, +proteine. Dormi 8h+.', tag: 'Recovery', color: 'var(--green)' },
-    { day: 'Mar 5 Mag', icon: '🟡', label: 'Attivazione leggera', desc: '25 min Z2 (155-167 bpm) + 4×20m shuttle ritmo moderato per riattivare i pattern.', tag: 'Z2 + shuttle', color: 'var(--yellow)' },
-    { day: 'Mer 6 Mag', icon: '🟡', label: 'Simulazione Ariet', desc: '10 min shuttle 20m con accelerazioni progressive. Poi 20 min pesi leggeri (volume −30%).', tag: 'Test sim', color: 'var(--yellow)' },
-    { day: 'Gio 7 Mag', icon: '🟠', label: 'Riposo + carbo loading', desc: 'Zero allenamento. +60g carbs (pasta/riso 2 volte). Idratazione 3L.', tag: 'RIPOSO', color: 'var(--acc)' },
-    { day: 'Ven 8 Mag', icon: '🔴', label: 'Riposo assoluto', desc: 'Solo mobilità 10 min. Cena: pasta in bianco 150g + petto pollo. Letto 22:30.', tag: 'PRE-TEST', color: 'var(--red)' },
-    { day: 'Sab 9 Mag — TEST', icon: '🏆', label: 'Test Ariet 09:00', desc: 'Sveglia 07:00. Colazione: 80g avena + banana + caffè. H-30: banana. Warm-up 5 min.', tag: 'GAME DAY', color: 'var(--green)' },
+  // Protocol days — generati relativi a OGGI (non hard-coded al 4 mag)
+  // Il weekend playoff è SAB raduno+test + DOM partita: il taper deve preservare per entrambi.
+  const dayNames = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+  const months = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+  const fmtDay = d => `${dayNames[d.getDay()].slice(0, 3)} ${d.getDate()} ${months[d.getMonth()]}`;
+
+  // Definisco il protocollo come offset dal test1 (giorni mancanti).
+  const protoSpec = [
+    { offset: -5, icon: '🟢', label: 'Recupero attivo', desc: 'Cammino 20-30 min, mangia bene (+carbs, +proteine), dormi 8h+. Niente HIIT.', tag: 'Recovery', color: 'var(--green)' },
+    { offset: -4, icon: '🟡', label: 'Attivazione leggera', desc: '25 min Z2 (155-167 bpm) + 4×20m shuttle ritmo moderato per riattivare i pattern.', tag: 'Z2 + shuttle', color: 'var(--yellow)' },
+    { offset: -3, icon: '🟡', label: 'Simulazione Ariet', desc: '10 min shuttle 20m con accelerazioni progressive. Poi 20 min pesi leggeri (volume −30%).', tag: 'Test sim', color: 'var(--yellow)' },
+    { offset: -2, icon: '🟠', label: 'Riposo + carbo loading', desc: 'Zero allenamento. +60g carbs (pasta/riso 2 volte). Idratazione 3L.', tag: 'RIPOSO', color: 'var(--acc)' },
+    { offset: -1, icon: '🔴', label: 'Riposo assoluto', desc: 'Solo mobilità 10 min. Cena: pasta in bianco 150g + petto pollo. Letto 22:30.', tag: 'PRE-TEST', color: 'var(--red)' },
+    { offset: 0,  icon: '🏆', label: 'Test Ariet 09:00 (raduno)', desc: 'Sveglia 07:00. Colazione: 80g avena + banana + caffè. H-30: banana. Warm-up 5 min progressivo.', tag: 'GAME DAY', color: 'var(--green)' },
+    { offset: 1,  icon: '⚽', label: 'PARTITA playoff', desc: 'Match il giorno dopo il test. Pre-partita: 80g pasta 2-3h prima + 250ml H₂O H-1. Post: ghiaccio + recovery 48h.', tag: 'PLAYOFF', color: 'var(--yellow)' },
   ];
 
-  document.getElementById('protocol-days').innerHTML = protocolDays.map(p => `
-    <div class="row">
+  const todayD = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const test1D = new Date(test1.getFullYear(), test1.getMonth(), test1.getDate());
+
+  const protocolDays = protoSpec.map(p => {
+    const d = new Date(test1D.getTime() + p.offset * 86400000);
+    const isToday = isSameDay(d, todayD);
+    const isPast = d < todayD && !isToday;
+    const todayMark = isToday ? ' — OGGI' : '';
+    const opacity = isPast ? 'opacity:.45;' : '';
+    return `<div class="row" style="${opacity}">
       <div class="ri">${p.icon}</div>
-      <div class="rc"><div class="rt">${p.day}</div><div class="rs"><strong>${p.label}.</strong> ${p.desc}</div></div>
+      <div class="rc"><div class="rt">${fmtDay(d)}${todayMark}</div><div class="rs"><strong>${p.label}.</strong> ${p.desc}</div></div>
       <div class="rv" style="color:${p.color}">${p.tag}</div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+
+  document.getElementById('protocol-days').innerHTML = protocolDays;
 
   // Predizione Ariet (calcolo locale da workout cardio recenti)
   await renderArietPrediction();
@@ -781,12 +875,17 @@ async function analyzePhoto(input) {
 
 // ── HEALTH SCREENSHOTS IMPORT ──────────────────────────
 // Carica più screenshot dell'app Salute/Fitness e ricostruisce dati mancanti via Vision.
+// Il risultato viene mostrato in tutti i container disponibili (oggi/allena/settings).
 async function importHealthScreenshots(input) {
   const files = Array.from(input.files || []);
   if (files.length === 0) return;
 
-  const result = document.getElementById('health-import-result');
-  result.innerHTML = `<div class="tip blue">Analizzo ${files.length} screenshot…</div>`;
+  const targets = ['health-hero-result', 'workouts-health-result', 'health-import-result']
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+  const setHTML = html => targets.forEach(el => { el.innerHTML = html; });
+
+  setHTML(`<div class="tip blue">Analizzo ${files.length} screenshot…</div>`);
 
   let processed = 0;
   let totalCost = 0;
@@ -809,7 +908,7 @@ async function importHealthScreenshots(input) {
       if ((r.message || '').includes('Cap')) break;
     }
     processed++;
-    result.innerHTML = `<div class="tip blue">Importato ${processed}/${files.length} (€${totalCost.toFixed(3)})</div>` + summaries.join('');
+    setHTML(`<div class="blk" style="margin-top:10px"><div class="bh"><div class="bi">📥</div><div class="bt">Import Salute</div><div class="tag tg">${processed}/${files.length} · €${totalCost.toFixed(3)}</div></div><div class="bb">${summaries.join('')}</div></div>`);
   }
 
   await updateApiUsage();
@@ -1695,6 +1794,21 @@ function openWorkoutForm() {
       <div style="font-size:18px">${t.icon}</div>
       <div>${t.label}</div>
     </div>`).join('');
+
+  // Smart default: tipo dal piano settimanale (dow) + durata tipica
+  const dow = new Date().getDay();
+  const dowToType = {
+    1: 'pesi_mf', 2: 'z2_cardio', 3: 'hiit_tapis', 4: 'pesi_mf',
+    5: 'z2_lungo', 6: 'recovery', 0: 'partita',
+  };
+  const dowToDuration = { 1: 30, 2: 35, 3: 25, 4: 30, 5: 45, 6: 30, 0: 90 };
+
+  const defType = dowToType[dow];
+  if (defType) {
+    const opt = document.querySelector(`#wo-type-grid .opt[data-type="${defType}"]`);
+    if (opt) selectWoType(defType, opt);
+  }
+  document.getElementById('wo-duration').value = dowToDuration[dow] || '';
 }
 
 function closeWorkoutForm() {
@@ -1880,6 +1994,7 @@ window.quickLogWeight = quickLogWeight;
 window.quickLogWeightValue = quickLogWeightValue;
 window.drawWeightChart = drawWeightChart;
 window.openWorkoutForm = openWorkoutForm;
+window.importHealthScreenshots = importHealthScreenshots;
 window.closeWorkoutForm = closeWorkoutForm;
 window.selectWoType = selectWoType;
 window.selectInt = selectInt;
