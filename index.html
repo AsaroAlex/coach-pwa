@@ -29,10 +29,10 @@
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;}
 html,body{overscroll-behavior:none;}
-body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;font-size:14px;padding-top:var(--safe-top);padding-bottom:var(--safe-bot);}
+body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;min-height:100dvh;font-size:14px;padding-bottom:var(--safe-bot);}
 
-/* Top status bar (pwa) */
-.statusbar{position:sticky;top:0;background:var(--bg);z-index:60;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--brd);}
+/* Top status bar (pwa) — gestisce safe-area-inset-top per Dynamic Island/notch iPhone */
+.statusbar{position:sticky;top:0;background:var(--bg);z-index:60;padding:calc(8px + var(--safe-top)) 16px 8px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--brd);}
 .sb-greet{font-size:11px;color:var(--mu);}
 .sb-greet strong{color:var(--text);}
 .sb-streak{display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:var(--acc);}
@@ -443,18 +443,12 @@ hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
     </div>
   </div>
 
-  <!-- Settimana cardio -->
+  <!-- Settimana cardio (renderizzata da JS, source of truth: WEEKLY_PLAN in app.js) -->
   <div class="blk">
     <div class="bh"><div class="bi">📅</div><div class="bt">Schema settimanale base</div><div class="tag tu">SENZA EVENTI EXTRA</div></div>
     <div class="bb">
       <div class="tip blue"><strong>Regola 80/20:</strong> 80% volume in Z2, 20% in HIIT. Vedi `docs/TRAINING_WEEKLY.md` per gestione partite/bici/padel.</div>
-      <div class="row"><div class="ri">LUN</div><div class="rc"><div class="rt">🏋️ Pesi MF</div><div class="rs">Sessione MacroFactor Workout</div></div></div>
-      <div class="row"><div class="ri">MAR</div><div class="rc"><div class="rt">🌳 Z2 35 min</div><div class="rs">Recupero attivo da pesi</div></div></div>
-      <div class="row"><div class="ri">MER</div><div class="rc"><div class="rt">🔥 HIIT 25 min</div><div class="rs">Schema "Piramide 1×1" sopra</div></div></div>
-      <div class="row"><div class="ri">GIO</div><div class="rc"><div class="rt">🏋️ Pesi MF</div><div class="rs">Seconda sessione MF</div></div></div>
-      <div class="row"><div class="ri">VEN</div><div class="rc"><div class="rt">🌳 Z2 lungo 45 min</div><div class="rs">Sessione più lunga della settimana</div></div></div>
-      <div class="row"><div class="ri">SAB</div><div class="rc"><div class="rt">😴 Riposo o Z2 30 min</div><div class="rs">Pre-partita se domenica</div></div></div>
-      <div class="row"><div class="ri">DOM</div><div class="rc"><div class="rt">⚽ Partita o Z2 lungo</div><div class="rs">Partita = vale 2 HIIT</div></div></div>
+      <div id="cardio-week"></div>
     </div>
   </div>
 
@@ -498,8 +492,8 @@ hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
     <div class="bb">
       <div class="photo-zone" id="photo-zone" onclick="document.getElementById('photo-input').click()">
         <div class="photo-icon">📷</div>
-        <div class="photo-text"><strong style="color:var(--text)">Tap per caricare foto</strong><br>Claude Vision analizza i macro</div>
-        <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" onchange="analyzePhoto(this)">
+        <div class="photo-text"><strong style="color:var(--text)">Tap per caricare foto</strong><br>Claude Vision analizza i macro · supporta più foto insieme</div>
+        <input type="file" id="photo-input" accept="image/*" capture="environment" multiple style="display:none" onchange="analyzePhoto(this)">
       </div>
       <div class="ld" id="photo-ld"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>Analizzo...</span></div>
       <div id="photo-result"></div>
@@ -652,6 +646,12 @@ hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
     <div class="sp"><div class="sv" id="ws-min">0</div><div class="sl">min totali</div></div>
     <div class="sp"><div class="sv" id="ws-rpe">—</div><div class="sl">RPE medio</div></div>
     <div class="sp" id="ws-load-pill"><div class="sv" id="ws-load">—</div><div class="sl">carico</div></div>
+  </div>
+
+  <!-- Piano settimanale (source of truth: WEEKLY_PLAN in app.js, condiviso con Oggi e Cardio) -->
+  <div class="blk">
+    <div class="bh"><div class="bi">📅</div><div class="bt">Piano settimanale</div><div class="tag tg">OGGI evidenziato</div></div>
+    <div class="bb" id="workouts-week"></div>
   </div>
 
   <!-- Aggiungi allenamento -->
@@ -946,6 +946,16 @@ hr{border:none;border-top:1px solid var(--brd);margin:10px 0;}
         </div>
         <button class="btn-s" onclick="showHealthGuide()">Guida</button>
       </div>
+      <div class="settings-row">
+        <div class="settings-icon">📸</div>
+        <div class="settings-content">
+          <div class="settings-name">Importa screenshot Salute</div>
+          <div class="settings-desc">Carica più screenshot insieme · Vision estrae peso/sonno/passi</div>
+        </div>
+        <input type="file" id="health-screenshots-input" accept="image/*" multiple style="display:none" onchange="importHealthScreenshots(this)">
+        <button class="btn-s" onclick="document.getElementById('health-screenshots-input').click()">Carica</button>
+      </div>
+      <div id="health-import-result" style="margin-top:8px"></div>
       <div class="settings-row">
         <div class="settings-icon">🔔</div>
         <div class="settings-content">

@@ -6,20 +6,7 @@
 
 ## 🔴 ALTA PRIORITÀ (prima del test del 9 mag)
 
-- [ ] **Semaforo autoregolazione in tab "Oggi"**
-  - Calcola verde/giallo/rosso dal check-in di ieri + workout con dolore + sonno
-  - Logica in `docs/AUTOREGULATION.md` sezione "Sistema semaforo decisionale"
-  - Modifica `renderOggi()` in `src/app.js`
-
-- [ ] **Mostrare in "Oggi" il workout di ieri**
-  - Se c'era dolore segnalato → banner rosso con consiglio recovery
-  - Modifica `renderOggi()` in `src/app.js`
-
-- [ ] **Aggiornare planMap settimanale in renderOggi()**
-  - Allineare con nuovo schema in `docs/TRAINING_WEEKLY.md`
-
-- [ ] **Banner countdown test 9 mag in Oggi**
-  - Verificare visibilità + messaggio motivazionale
+Tutti i task in alta priorità sono stati completati il 6 maggio 2026. Vedi sezione COMPLETATI.
 
 ---
 
@@ -81,7 +68,8 @@
 
 ## 🐛 BUG NOTI
 
-- [ ] Service Worker non sempre aggiornato dopo deploy → forzare versione cache su ogni release
+- [x] ~~Service Worker non sempre aggiornato dopo deploy~~ — risolto 6 mag (cache v2 + try/catch init)
+- [x] ~~Header tagliato sotto Dynamic Island su iPhone moderni~~ — risolto 6 mag (safe-area-inset su .statusbar)
 - [ ] Foto progresso pesano in IndexedDB → comprimere base64 a 60% qualità
 - [ ] Tab bar overflow su iPhone SE/Mini → testare e ridurre padding
 
@@ -107,6 +95,20 @@
 ---
 
 ## ✅ COMPLETATI
+
+### 6 maggio 2026 (V1.2)
+- ✅ Semaforo autoregolazione completo (sleep/energy/foodLevel/pain) allineato a `docs/AUTOREGULATION.md`
+- ✅ Toggle "PASTO PRINCIPALE OGGI" (Saltato/Ridotto/Normale) nel form check-in
+- ✅ Banner rosso recovery per workout di ieri con dolore (protocollo 24-72h)
+- ✅ Fix PWA iOS: bump cache SW v1→v2, try/catch difensivo in init, manifest "id"
+- ✅ Fix safe-area Dynamic Island (statusbar `padding-top:calc(8px + safe-top)`)
+- ✅ Centralizzazione `WEEKLY_PLAN` e `TEST_DATES` in `src/app.js` — source of truth condivisa tra Oggi, Cardio, Allena, Test
+- ✅ Schema settimanale dinamico in tab Cardio (rimosso HTML hardcoded)
+- ✅ Vista piano settimanale in tab Allena (con evidenziazione "OGGI")
+- ✅ Allineamento `WEEKLY_PLAN` a `docs/TRAINING_WEEKLY.md` (domenica = "Partita o riposo")
+- ✅ Adattamento estate automatico (giu-ago: idratazione + orario mattina/sera)
+- ✅ Upload multiplo foto pasto (Dieta) con loop e cap-aware
+- ✅ Importatore screenshot Apple Salute (Setup → Vision estrae peso/sonno/passi/HR/HRV/VO2max)
 
 ### 5 maggio 2026 (V1.1)
 - ✅ Documentazione completa per Claude Code (`CLAUDE.md` + `docs/*.md`)

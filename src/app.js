@@ -143,12 +143,9 @@ async function renderAll() {
   const w = latestWeight?.weight || appState.profile.weight;
   document.getElementById('sv-weight').textContent = w ? w.toFixed(1) : '—';
 
-  // Days until tests
-  const test1 = new Date('2026-05-09T09:00:00');
-  const test2 = new Date('2026-08-25');
-  const test1Days = Math.max(0, Math.ceil((test1 - now) / (24 * 3600 * 1000)));
-  const aug = new Date('2026-08-15');
-  const augWeeks = Math.max(0, Math.round((aug - now) / (7 * 24 * 3600 * 1000)));
+  // Days until tests (source of truth: TEST_DATES)
+  const test1Days = Math.max(0, Math.ceil((TEST_DATES.test1 - now) / (24 * 3600 * 1000)));
+  const augWeeks = Math.max(0, Math.round((TEST_DATES.test2 - now) / (7 * 24 * 3600 * 1000)));
 
   document.getElementById('sv-test-days').textContent = test1Days || '—';
   document.getElementById('sv-aug-weeks').textContent = augWeeks;
@@ -158,6 +155,63 @@ async function renderAll() {
 
   // Today plan
   await renderOggi();
+}
+
+// ── COSTANTI CENTRALIZZATE ──────────────────────────────
+// Source of truth condivisa tra renderOggi, renderRaduno, renderCardio, renderWorkouts, renderAll.
+// Modificare qui per cambiare il piano in TUTTE le tab simultaneamente.
+const TEST_DATES = {
+  test1: new Date('2026-05-09T09:00:00'),
+  test2: new Date('2026-08-25T09:00:00'),
+};
+
+const WEEKLY_PLAN = {
+  // Allineato a docs/TRAINING_WEEKLY.md (schema BASE no eventi extra)
+  0: { dow: 'DOM', icon: '⚽', title: 'Domenica · Partita o riposo', tag: 'PARTITA/RIPOSO', color: 'var(--yellow)',
+       desc: 'Con partita: vale come 2 HIIT (recupero 48h dopo). Senza partita: riposo completo (recupero settimanale).',
+       short: 'Partita o riposo',
+       actions: ['Pre-partita: idratati 250ml 30min prima', '5 min mobilità leggera prima del fischio'] },
+  1: { dow: 'LUN', icon: '🏋️', title: 'Lunedì · Pesi (MacroFactor)', tag: 'PESI', color: 'var(--blue)',
+       desc: 'Sessione MacroFactor Workout. Lascia che MF gestisca progressione.',
+       short: 'Pesi MF',
+       actions: ['Apri MacroFactor', 'Pranzo entro 30 min dopo'] },
+  2: { dow: 'MAR', icon: '🌳', title: 'Martedì · Z2 cardio 35 min', tag: 'Z2', color: 'var(--green)',
+       desc: 'Recupero attivo da pesi. 8.5-9.5 km/h pendenza 1-2%, BPM 155-167.',
+       short: 'Z2 35min',
+       actions: ['Riscaldamento 5 min progressivo', 'Cool-down 5 min'] },
+  3: { dow: 'MER', icon: '🔥', title: 'Mercoledì · HIIT tapis 25 min', tag: 'HIIT', color: 'var(--acc)',
+       desc: 'Schema "Piramide 1×1": 11→14 km/h, intervalli 1 min con recupero 1 min.',
+       short: 'HIIT 25min',
+       actions: ['NO se ieri pesi pesante', 'Vedi protocollo nel tab Cardio'] },
+  4: { dow: 'GIO', icon: '🏋️', title: 'Giovedì · Pesi (MacroFactor)', tag: 'PESI', color: 'var(--blue)',
+       desc: 'Seconda sessione MF della settimana.',
+       short: 'Pesi MF',
+       actions: ['Apri MacroFactor'] },
+  5: { dow: 'VEN', icon: '🌳', title: 'Venerdì · Z2 lungo 45 min', tag: 'Z2', color: 'var(--green)',
+       desc: 'Sessione più lunga della settimana. 8.5-9 km/h, BPM 155-167.',
+       short: 'Z2 45min',
+       actions: ['Idratati', 'Cool-down progressivo 5 min'] },
+  6: { dow: 'SAB', icon: '😴', title: 'Sabato · Riposo o Z2 leggero', tag: 'RIPOSO', color: 'var(--mu)',
+       desc: 'Pre-partita domani: riposo. Senza partita: Z2 30 min ok.',
+       short: 'Riposo',
+       actions: ['Recupero attivo'] },
+};
+
+// Helper: renderizza il piano settimanale 7 giorni evidenziando oggi.
+// Riusato da renderCardio (#cardio-week) e renderWorkouts (#workouts-week).
+function renderWeeklyPlanList(targetElId) {
+  const el = document.getElementById(targetElId);
+  if (!el) return;
+  const today = new Date().getDay();
+  // Ordine ISO: LUN..DOM (più naturale di DOM..SAB)
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  el.innerHTML = order.map(d => {
+    const p = WEEKLY_PLAN[d];
+    const isToday = d === today;
+    const todayMark = isToday ? '<span style="background:var(--acc);color:#000;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-left:6px">OGGI</span>' : '';
+    const bg = isToday ? 'background:rgba(255,95,31,.05);' : '';
+    return `<div class="row" style="${bg}"><div class="ri">${p.dow}</div><div class="rc"><div class="rt">${p.icon} ${p.short}${todayMark}</div><div class="rs">${p.desc}</div></div></div>`;
+  }).join('');
 }
 
 // ── OGGI ────────────────────────────────────────────────
@@ -176,7 +230,7 @@ async function renderOggi() {
     return Math.abs((now - d) / 86400000 - 1) < 0.7;
   });
   const upcomingEvents = await Storage.getUpcomingEvents();
-  const test1 = new Date('2026-05-09T09:00:00');
+  const test1 = TEST_DATES.test1;
   const test1Days = Math.ceil((test1 - now) / (24 * 3600 * 1000));
 
   // ── SEMAFORO autoregolazione ──
@@ -216,32 +270,14 @@ async function renderOggi() {
   }
   document.getElementById('coach-msg').innerHTML = msg;
 
-  // Schema settimanale aggiornato V1.1
-  const planMap = {
-    0: { icon: '⚽', title: 'Domenica · Partita o Z2 lungo', tag: 'PARTITA/Z2', color: 'var(--yellow)',
-         desc: 'Con partita: vale come 2 HIIT. Senza partita: Z2 lungo 45-60 min al tapis.',
-         actions: ['Idratati 250ml 30min prima', 'Pre-partita: 5 min mobilità leggera'] },
-    1: { icon: '🏋️', title: 'Lunedì · Pesi (MacroFactor)', tag: 'PESI', color: 'var(--blue)',
-         desc: 'Sessione MacroFactor Workout. Lascia che MF gestisca progressione.',
-         actions: ['Apri MacroFactor', 'Pranzo entro 30 min dopo'] },
-    2: { icon: '🌳', title: 'Martedì · Z2 cardio 35 min', tag: 'Z2', color: 'var(--green)',
-         desc: 'Recovery attivo da pesi. 8.5-9.5 km/h pendenza 1-2%, BPM 155-167.',
-         actions: ['Riscaldamento 5 min progressivo', 'Cool-down 5 min'] },
-    3: { icon: '🔥', title: 'Mercoledì · HIIT tapis 25 min', tag: 'HIIT', color: 'var(--acc)',
-         desc: 'Schema "Piramide 1×1": 11→14 km/h, intervalli 1 min con recupero 1 min.',
-         actions: ['NO se ieri pesi pesante', 'Vedi protocollo nel tab Cardio'] },
-    4: { icon: '🏋️', title: 'Giovedì · Pesi (MacroFactor)', tag: 'PESI', color: 'var(--blue)',
-         desc: 'Seconda sessione MF della settimana.',
-         actions: ['Apri MacroFactor'] },
-    5: { icon: '🌳', title: 'Venerdì · Z2 lungo 45 min', tag: 'Z2', color: 'var(--green)',
-         desc: 'Sessione più lunga della settimana. 8.5-9 km/h, BPM 155-167.',
-         actions: ['Idratati', 'Cool-down progressivo 5 min'] },
-    6: { icon: '😴', title: 'Sabato · Riposo o Z2 leggero', tag: 'RIPOSO', color: 'var(--mu)',
-         desc: 'Pre-partita domani: riposo. Senza partita: Z2 30 min ok.',
-         actions: ['Recupero attivo'] },
-  };
+  // Source of truth: WEEKLY_PLAN definito sopra (condiviso con Cardio + Allena)
+  let plan = { ...WEEKLY_PLAN[dow] };
 
-  let plan = planMap[dow];
+  // Auto-adattamento per stagione calda (estate giu-ago): suggerimenti idratazione + orario
+  const month = now.getMonth(); // 0=gen, 5=giu, 7=ago
+  if (month >= 5 && month <= 7 && plan.tag !== 'RIPOSO') {
+    plan.actions = [...plan.actions, '🌡️ Caldo: allenati 7-9 mattina o dopo 19', '💧 +500ml acqua durante sessione'];
+  }
 
   // Override plan se semaforo rosso
   if (semaforo === 'rosso') {
@@ -366,8 +402,8 @@ async function renderMacros(weight) {
 
 // ── RADUNO ──────────────────────────────────────────────
 async function renderRaduno() {
-  // Countdown for test 1
-  const test1 = new Date('2026-05-09T09:00:00');
+  // Countdown for test 1 (source of truth: TEST_DATES)
+  const test1 = TEST_DATES.test1;
   const now = new Date();
   const diff = test1 - now;
 
@@ -385,8 +421,8 @@ async function renderRaduno() {
     document.getElementById('cd-test1').innerHTML = '<div style="font-size:13px;color:var(--green);text-align:center;padding:12px;width:100%">✓ Test passato! Ora obiettivo agosto.</div>';
   }
 
-  // Aug countdown
-  const aug = new Date('2026-08-25');
+  // Aug countdown (source of truth: TEST_DATES)
+  const aug = TEST_DATES.test2;
   const augDiff = aug - now;
   const augDays = Math.max(0, Math.ceil(augDiff / 86400000));
   document.getElementById('aug-countdown').textContent = `~${augDays} gg`;
@@ -437,6 +473,9 @@ async function renderCardio() {
         <div style="font-size:9px;color:var(--mu);text-align:right">bpm</div>
       </div>
     </div>`).join('');
+
+  // Schema settimanale dinamico (source of truth: WEEKLY_PLAN)
+  renderWeeklyPlanList('cardio-week');
 }
 
 // ── COACH ───────────────────────────────────────────────
@@ -493,36 +532,89 @@ async function updateApiUsage() {
 }
 
 // ── PHOTO ANALYSIS ──────────────────────────────────────
+// Supporta upload multiplo: analizza ogni foto in sequenza, ferma su errore di cap.
 async function analyzePhoto(input) {
-  const file = input.files[0];
-  if (!file) return;
+  const files = Array.from(input.files || []);
+  if (files.length === 0) return;
 
-  const reader = new FileReader();
-  reader.onload = async e => {
-    const fullData = e.target.result;
+  const ld = document.getElementById('photo-ld');
+  const res = document.getElementById('photo-result');
+  res.innerHTML = '';
+  ld.style.display = 'flex';
+
+  let totalCost = 0;
+  let processed = 0;
+  const blocks = [];
+
+  for (const file of files) {
+    const fullData = await new Promise(resolve => {
+      const r = new FileReader();
+      r.onload = e => resolve(e.target.result);
+      r.readAsDataURL(file);
+    });
     const base64 = fullData.split(',')[1];
 
-    // Show preview
-    document.getElementById('photo-zone').classList.add('has-image');
-    document.getElementById('photo-zone').innerHTML = `<img src="${fullData}" alt="meal">`;
-
-    const ld = document.getElementById('photo-ld');
-    const res = document.getElementById('photo-result');
-    ld.style.display = 'flex';
-    res.innerHTML = '';
+    // Aggiorna anteprima con l'ultima foto caricata
+    const zone = document.getElementById('photo-zone');
+    zone.classList.add('has-image');
+    zone.innerHTML = `<img src="${fullData}" alt="meal ${processed + 1}/${files.length}">`;
 
     const result = await API.analyzePhoto(base64);
-    ld.style.display = 'none';
-
     if (result.error) {
-      res.innerHTML = `<div class="tip red">${result.message}</div>`;
+      blocks.push(`<div class="tip red">Foto ${processed + 1}/${files.length}: ${result.message}</div>`);
+      // Cap raggiunto → fermiamoci (le call successive fallirebbero comunque)
+      if (result.message.includes('Cap')) break;
     } else {
-      res.innerHTML = `<div class="air">${md(result.text)}</div>`;
-      await updateApiUsage();
-      showToast(`✓ Analisi completata (€${result.cost.toFixed(3)})`, 'success');
+      totalCost += result.cost;
+      blocks.push(`<div class="air" style="border-top:1px solid var(--brd);padding-top:8px;margin-top:8px"><div style="font-size:10px;color:var(--mu);margin-bottom:4px">Foto ${processed + 1}/${files.length}</div>${md(result.text)}</div>`);
     }
-  };
-  reader.readAsDataURL(file);
+    processed++;
+    res.innerHTML = blocks.join('');
+  }
+
+  ld.style.display = 'none';
+  await updateApiUsage();
+  if (processed > 0) {
+    showToast(`✓ ${processed}/${files.length} foto analizzate (€${totalCost.toFixed(3)})`, 'success');
+  }
+}
+
+// ── HEALTH SCREENSHOTS IMPORT ──────────────────────────
+// Carica più screenshot dell'app Salute/Fitness e ricostruisce dati mancanti via Vision.
+async function importHealthScreenshots(input) {
+  const files = Array.from(input.files || []);
+  if (files.length === 0) return;
+
+  const result = document.getElementById('health-import-result');
+  result.innerHTML = `<div class="tip blue">Analizzo ${files.length} screenshot…</div>`;
+
+  let processed = 0;
+  let totalCost = 0;
+  const summaries = [];
+
+  for (const file of files) {
+    const fullData = await new Promise(resolve => {
+      const r = new FileReader();
+      r.onload = e => resolve(e.target.result);
+      r.readAsDataURL(file);
+    });
+    const base64 = fullData.split(',')[1];
+
+    const r = await Health.importScreenshot(base64);
+    if (r.ok) {
+      totalCost += r.cost || 0;
+      summaries.push(`<div class="row"><div class="ri">✓</div><div class="rc"><div class="rt">${r.date}</div><div class="rs">${r.saved.join(' · ') || 'nessun dato estratto'}</div></div></div>`);
+    } else {
+      summaries.push(`<div class="row"><div class="ri">✗</div><div class="rc"><div class="rt" style="color:var(--red)">Errore</div><div class="rs">${r.message}</div></div></div>`);
+      if ((r.message || '').includes('Cap')) break;
+    }
+    processed++;
+    result.innerHTML = `<div class="tip blue">Importato ${processed}/${files.length} (€${totalCost.toFixed(3)})</div>` + summaries.join('');
+  }
+
+  await updateApiUsage();
+  await renderAll();
+  showToast(`✓ ${processed} screenshot importati`, 'success');
 }
 
 // ── MEAL PLANNER ────────────────────────────────────────
@@ -1129,6 +1221,9 @@ let workoutFormData = {};
 let eventFormData = {};
 
 async function renderWorkouts() {
+  // Vista piano settimanale (source of truth: WEEKLY_PLAN, condivisa con Oggi e Cardio)
+  renderWeeklyPlanList('workouts-week');
+
   const workouts = await Storage.getWorkouts();
   const weeklyW = await Storage.getWeeklyWorkouts();
   const events = await Storage.getUpcomingEvents();

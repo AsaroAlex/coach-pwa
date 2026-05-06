@@ -189,7 +189,7 @@ VINCOLI ASSOLUTI:
     }
   },
 
-  async analyzePhoto(base64Image) {
+  async analyzePhoto(base64Image, customPrompt = null) {
     const cap = await this.checkCap('vision');
     if (!cap.allowed) {
       return {
@@ -206,7 +206,7 @@ VINCOLI ASSOLUTI:
     const profile = await Storage.getProfile();
     const w = profile.weight || 78.7;
 
-    const visionPrompt = `Analizza questa foto di un pasto. L'utente è un assistente arbitrale di calcio (${w}kg, target 70kg, in deficit calorico, IF 16:8).
+    const visionPrompt = customPrompt || `Analizza questa foto di un pasto. L'utente è un assistente arbitrale di calcio (${w}kg, target 70kg, in deficit calorico, IF 16:8).
 
 Fornisci la risposta in QUESTO formato esatto, senza variazioni:
 
@@ -215,7 +215,7 @@ Fornisci la risposta in QUESTO formato esatto, senza variazioni:
 **📊 Macros stimati:**
 - Calorie: ~XXX kcal
 - Proteine: XXg
-- Carboidrati: XXg  
+- Carboidrati: XXg
 - Grassi: XXg
 
 **🚦 Semaforo:** 🟢/🟡/🔴
@@ -261,8 +261,10 @@ Sii preciso ma realistico (non sovrastimare). Se la foto non è di un pasto, ris
       const realCost = (inputTokens * 3 / 1_000_000 + outputTokens * 15 / 1_000_000) * 0.92;
       await Storage.trackUsage('vision', realCost);
 
-      // Save analysis
-      await Storage.addMealPhoto({ analysis: text, image: base64Image.slice(0, 100) /* preview only */ });
+      // Save analysis solo se prompt default (pasti). Per custom prompts (es. health screenshot) il chiamante decide cosa salvare.
+      if (!customPrompt) {
+        await Storage.addMealPhoto({ analysis: text, image: base64Image.slice(0, 100) /* preview only */ });
+      }
 
       return { error: false, text, cost: realCost };
     } catch (e) {
